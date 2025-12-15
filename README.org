@@ -1,0 +1,301 @@
+#+TITLE: Claude Multi-Agent for Emacs
+#+AUTHOR: Your Name
+#+DATE: 2025-12-15
+
+* Claude Multi-Agent
+
+An Emacs plugin for managing multiple [[https://github.com/anthropics/claude-code][claude-code]] instances in parallel with automatic git worktree isolation and centralized org-mode progress tracking.
+
+[[https://github.com/yourusername/claude-multi-agent.el/actions][https://github.com/yourusername/claude-multi-agent.el/workflows/Tests/badge.svg]]
+[[https://github.com/yourusername/claude-multi-agent.el/blob/main/LICENSE][https://img.shields.io/badge/license-MIT-blue.svg]]
+
+** Features
+
+- 🚀 *Parallel Agent Execution* - Run multiple Claude Code instances simultaneously
+- 🌳 *Git Worktree Isolation* - Each agent works in its own worktree to prevent conflicts
+- 📊 *Org-Mode Progress Tracking* - Real-time progress updates in a beautiful org-mode buffer
+- 🔔 *Smart Notifications* - Get notified when agents need your input (popup, visual, modeline, sound)
+- 🎨 *Color-Coded Output* - Each agent has its own color for easy visual distinction
+- ⚡ *Eshell Integration* - Agents run in dedicated eshell buffers
+- 🧹 *Automatic Cleanup* - Worktrees and resources are cleaned up when agents complete
+
+** Requirements
+
+- Emacs 27.2+
+- [[https://github.com/doomemacs/doomemacs][Doom Emacs]] (recommended)
+- [[https://github.com/anthropics/claude-code][claude-code]] installed and accessible in PATH
+- Git (for worktree support)
+
+** Installation
+
+*** Via Doom Emacs (Recommended)
+
+1. Clone this repository:
+   #+begin_src shell
+   git clone https://github.com/yourusername/claude-multi-agent.el ~/projects/claude-multi-agent.el
+   #+end_src
+
+2. Install via Make:
+   #+begin_src shell
+   cd ~/projects/claude-multi-agent.el
+   make install
+   #+end_src
+
+   Or create symlink manually:
+   #+begin_src shell
+   ln -s ~/projects/claude-multi-agent.el ~/.config/emacs/.doom.d/modules/tools/claude-multi
+   #+end_src
+
+3. Enable the module in =~/.config/emacs/.doom.d/init.el=:
+   #+begin_src emacs-lisp
+   (doom! :tools
+          claude-multi)
+   #+end_src
+
+4. Sync Doom:
+   #+begin_src shell
+   doom sync
+   #+end_src
+
+5. Restart Emacs
+
+** Usage
+
+*** Starting a Session
+
+#+begin_src
+SPC c m s
+#+end_src
+
+Or: =M-x claude-multi/start-session=
+
+This initializes a new multi-agent session and opens the org-mode progress buffer.
+
+*** Spawning Agents
+
+#+begin_src
+SPC c m a
+#+end_src
+
+Or: =M-x claude-multi/spawn-agent=
+
+Enter a task description for the agent. Each agent will:
+- Get a dedicated git worktree (if in a git repo)
+- Run in its own color-coded eshell buffer
+- Report progress to the central org-mode buffer
+
+*** Monitoring Progress
+
+#+begin_src
+SPC c m p     - Open progress buffer
+SPC c m d     - Show dashboard with all agents
+SPC c m w     - Show agents waiting for input
+#+end_src
+
+The progress buffer is an org-mode file with:
+- Session information and statistics
+- Per-agent sections with timestamps
+- Color-coded status indicators
+- Org properties for metadata
+
+*** Responding to Agents
+
+When an agent needs input, you'll be notified via:
+- Popup notification
+- Visual indicator in progress buffer
+- Mode line indicator (e.g., =[Claude:2⏳]=)
+- Optional audio alert
+
+Respond with:
+#+begin_src
+SPC c m i
+#+end_src
+
+Or: =M-x claude-multi/send-input=
+
+*** Managing Agents
+
+#+begin_src
+SPC c m f     - Focus on an agent's eshell buffer
+SPC c m k     - Kill a specific agent
+SPC c m K     - Kill all agents
+SPC c m t     - List all worktrees
+SPC c m c     - Cleanup orphaned worktrees
+SPC c m e     - Export progress to .org file
+#+end_src
+
+** Configuration
+
+*** Worktree Location
+
+#+begin_src emacs-lisp
+(setq claude-multi-worktree-location 'adjacent)  ; or 'internal
+#+end_src
+
+- =adjacent= - Create worktrees in =../claude-worktrees/= (recommended)
+- =internal= - Create worktrees in =.git/worktrees/=
+
+*** Auto-Cleanup
+
+#+begin_src emacs-lisp
+(setq claude-multi-auto-cleanup t)  ; Clean up worktrees when agents complete
+#+end_src
+
+*** Notification Methods
+
+#+begin_src emacs-lisp
+(setq claude-multi-notification-methods '(popup markdown modeline sound))
+#+end_src
+
+Available methods:
+- =popup= - System notification popup
+- =markdown= - Visual indicator in progress buffer
+- =modeline= - Count in mode line
+- =sound= - Audio alert
+
+*** Buffer Cleanup
+
+#+begin_src emacs-lisp
+(setq claude-multi-buffer-cleanup 'auto-close-success)
+#+end_src
+
+Options:
+- =keep-all= - Keep all eshell buffers open
+- =auto-close-success= - Close successful agents, keep failed
+- =ask= - Prompt before closing
+
+*** Agent Colors
+
+#+begin_src emacs-lisp
+(setq claude-multi-agent-colors
+      '("#FF6B6B" "#4ECDC4" "#45B7D1" "#FFA07A" "#98D8C8"
+        "#F7DC6F" "#BB8FCE" "#85C1E2" "#F8B739" "#52B788"))
+#+end_src
+
+** Example Workflow
+
+1. Open your project in Emacs
+2. Start a session: =SPC c m s=
+3. Spawn multiple agents for different tasks:
+   - Agent 1: "Implement user authentication"
+   - Agent 2: "Add unit tests for API endpoints"
+   - Agent 3: "Update documentation"
+4. Monitor progress in the org-mode buffer
+5. Respond to input requests as needed
+6. Review results in each agent's worktree
+7. Merge successful changes back to main branch
+
+** Architecture
+
+*** Core Modules
+
+- =config.el= - Main configuration, keybindings, customization variables
+- =autoload/agents.el= - Agent lifecycle management (create, monitor, kill)
+- =autoload/progress.el= - Org-mode progress tracking and output formatting
+- =autoload/worktree.el= - Git worktree creation, deletion, and management
+- =autoload/notifications.el= - Input detection and multi-method notifications
+
+*** Data Flow
+
+#+begin_src
+User Input → spawn-agent
+    ↓
+Create Agent Structure
+    ↓
+Create Git Worktree (if in repo)
+    ↓
+Launch Eshell + Claude Code
+    ↓
+Monitor Output (eshell-output-filter-functions)
+    ↓
+├─→ Detect Input Requests → Notify User
+├─→ Detect Completion → Cleanup
+├─→ Detect Errors → Mark Failed
+└─→ Update Org-Mode Progress Buffer
+#+end_src
+
+** Development
+
+*** Building
+
+#+begin_src shell
+make compile      # Byte-compile all files
+make test         # Run tests (when implemented)
+make clean        # Remove compiled files
+make lint         # Check syntax and style
+#+end_src
+
+*** Running Tests
+
+Tests are located in =test/= directory using ERT (Emacs Regression Testing).
+
+#+begin_src shell
+make test
+#+end_src
+
+*** Contributing
+
+1. Fork the repository
+2. Create a feature branch (=feature/amazing-feature=)
+3. Commit your changes (follow [[https://www.conventionalcommits.org/][Conventional Commits]])
+4. Push to the branch
+5. Open a Pull Request
+
+** Troubleshooting
+
+*** Claude Code Not Found
+
+Make sure =claude= is in your PATH:
+#+begin_src shell
+which claude
+#+end_src
+
+If not, install it or add to Emacs =exec-path=:
+#+begin_src emacs-lisp
+(add-to-list 'exec-path "/path/to/claude")
+#+end_src
+
+*** Worktree Creation Fails
+
+Check that you're in a git repository:
+#+begin_src shell
+git rev-parse --is-inside-work-tree
+#+end_src
+
+The plugin will gracefully fall back to using the same directory if worktrees can't be created.
+
+*** Notifications Not Working
+
+Install the =alert= package:
+#+begin_src shell
+doom sync
+#+end_src
+
+Or verify it's in your =packages.el=.
+
+** Roadmap
+
+- [ ] Complete test suite (ERT tests for all modules)
+- [ ] Agent task templates (predefined common tasks)
+- [ ] Result comparison view (diff outputs from multiple agents)
+- [ ] Agent collaboration (agents can reference each other's work)
+- [ ] Session persistence (resume agents after Emacs restart)
+- [ ] Integration with org-agenda
+- [ ] Export session reports
+
+** License
+
+MIT License - see [[file:LICENSE][LICENSE]] file for details.
+
+** Acknowledgments
+
+- Built for [[https://github.com/anthropics/claude-code][Claude Code]] by Anthropic
+- Designed for [[https://github.com/doomemacs/doomemacs][Doom Emacs]]
+- Inspired by parallel development workflows
+
+** Links
+
+- [[https://github.com/yourusername/claude-multi-agent.el][GitHub Repository]]
+- [[https://github.com/yourusername/claude-multi-agent.el/issues][Issue Tracker]]
+- [[https://github.com/anthropics/claude-code][Claude Code]]
+- [[https://github.com/doomemacs/doomemacs][Doom Emacs]]

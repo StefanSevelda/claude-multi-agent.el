@@ -1,0 +1,39 @@
+# Compiled Emacs files
+*.elc
+
+# Backup files
+*~
+\#*\#
+.\#*
+
+# Test artifacts
+test/*.elc
+.ert-runner/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+
+# Build artifacts
+*.log
+dist/
+
+# Temporary test directories
+test/fixtures/temp-*
+
+# Emacs auto-save and backup
+.#*
+*~
+\#*\#
+*.bak
+.saves-*
+auto-save-list
+
+# Org-mode exports
+*.html
+*.tex
+*.pdf

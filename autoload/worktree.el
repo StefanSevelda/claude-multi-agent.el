@@ -1,0 +1,236 @@
+;; -*- lexical-binding: t; -*-
+;;; autoload/worktree.el --- Git worktree management for Claude Multi-Agent
+
+;;; Commentary:
+;; Handles creation and deletion of git worktrees for agent isolation
+;; Each agent gets its own worktree to work in without conflicts
+
+;;; Code:
+
+(require 'f)
+(require 's)
+
+;;; Worktree detection
+
+;;;###autoload
+(defun claude-multi--in-git-repo-p ()
+  "Return non-nil if the current directory is inside a git repository."
+  (let ((default-directory (expand-file-name default-directory)))
+    (= 0 (call-process "git" nil nil nil "rev-parse" "--git-dir"))))
+
+;;;###autoload
+(defun claude-multi--get-git-root ()
+  "Return the root directory of the current git repository."
+  (when (claude-multi--in-git-repo-p)
+    (let ((root (string-trim
+                 (shell-command-to-string "git rev-parse --show-toplevel"))))
+      (when (and root (not (string-empty-p root)))
+        root))))
+
+(defun claude-multi--get-current-branch ()
+  "Return the name of the current git branch."
+  (string-trim
+   (shell-command-to-string "git rev-parse --abbrev-ref HEAD")))
+
+;;; Worktree creation
+
+;;;###autoload
+(defun claude-multi--create-worktree (agent)
+  "Create a git worktree for AGENT.
+Returns the path to the worktree, or nil if creation failed."
+  (condition-case err
+      (let* ((repo-root (claude-multi--get-git-root))
+             (repo-name (file-name-nondirectory repo-root))
+             (agent-id (claude-agent-id agent))
+             (branch-name (format "claude/%s" agent-id))
+             (worktree-path (claude-multi--determine-worktree-path repo-root repo-name agent-id)))
+
+        ;; Ensure the worktree parent directory exists
+        (let ((worktree-parent (file-name-directory worktree-path)))
+          (unless (file-exists-p worktree-parent)
+            (make-directory worktree-parent t)))
+
+        ;; Check if worktree already exists
+        (when (file-exists-p worktree-path)
+          (error "Worktree path already exists: %s" worktree-path))
+
+        ;; Create the worktree with a new branch
+        (let ((default-directory repo-root))
+          (with-temp-buffer
+            (let ((exit-code (call-process "git" nil t nil
+                                          "worktree" "add"
+                                          "-b" branch-name
+                                          worktree-path
+                                          "HEAD")))
+              (unless (= 0 exit-code)
+                (error "Git worktree add failed: %s" (buffer-string))))))
+
+        (message "Created worktree for %s at %s" (claude-agent-name agent) worktree-path)
+        worktree-path)
+
+    (error
+     (message "Failed to create worktree for %s: %s"
+              (claude-agent-name agent)
+              (error-message-string err))
+     ;; Return nil to indicate failure - agent will use current directory
+     nil)))
+
+(defun claude-multi--determine-worktree-path (repo-root repo-name agent-id)
+  "Determine the worktree path based on configuration.
+REPO-ROOT is the git repository root.
+REPO-NAME is the name of the repository.
+AGENT-ID is the agent's unique identifier."
+  (pcase claude-multi-worktree-location
+    ('adjacent
+     ;; Create worktrees in ../claude-worktrees/
+     (let ((worktrees-dir (expand-file-name "../claude-worktrees" repo-root)))
+       (expand-file-name (format "%s-%s" repo-name agent-id) worktrees-dir)))
+    ('internal
+     ;; Create worktrees in .git/worktrees/
+     (expand-file-name (format ".git/worktrees/%s" agent-id) repo-root))
+    (_
+     ;; Default to adjacent
+     (let ((worktrees-dir (expand-file-name "../claude-worktrees" repo-root)))
+       (expand-file-name (format "%s-%s" repo-name agent-id) worktrees-dir)))))
+
+;;; Worktree deletion
+
+;;;###autoload
+(defun claude-multi--delete-worktree (agent)
+  "Delete the worktree associated with AGENT."
+  (when-let ((worktree-path (claude-agent-worktree-path agent)))
+    (condition-case err
+        (progn
+          ;; First, remove the worktree using git
+          (let ((default-directory (claude-multi--get-git-root)))
+            (with-temp-buffer
+              (let ((exit-code (call-process "git" nil t nil
+                                            "worktree" "remove"
+                                            "--force"
+                                            worktree-path)))
+                (unless (= 0 exit-code)
+                  (error "Git worktree remove failed: %s" (buffer-string))))))
+
+          ;; Delete the branch
+          (let ((branch-name (format "claude/%s" (claude-agent-id agent)))
+                (default-directory (claude-multi--get-git-root)))
+            (call-process "git" nil nil nil
+                         "branch" "-D" branch-name))
+
+          (message "Deleted worktree for %s" (claude-agent-name agent)))
+
+      (error
+       (message "Failed to delete worktree for %s: %s"
+                (claude-agent-name agent)
+                (error-message-string err))
+       ;; Try to clean up the directory manually
+       (when (file-exists-p worktree-path)
+         (ignore-errors
+           (delete-directory worktree-path t)))))))
+
+;;; Worktree listing
+
+;;;###autoload
+(defun claude-multi--list-worktrees ()
+  "Return a list of all git worktrees in the current repository."
+  (when (claude-multi--in-git-repo-p)
+    (let ((default-directory (claude-multi--get-git-root)))
+      (with-temp-buffer
+        (when (= 0 (call-process "git" nil t nil "worktree" "list" "--porcelain"))
+          (goto-char (point-min))
+          (let (worktrees)
+            (while (re-search-forward "^worktree \\(.+\\)$" nil t)
+              (push (match-string 1) worktrees))
+            (nreverse worktrees)))))))
+
+;;;###autoload
+(defun claude-multi/list-worktrees ()
+  "Interactively display all git worktrees."
+  (interactive)
+  (if-let ((worktrees (claude-multi--list-worktrees)))
+      (let ((buf (get-buffer-create "*Claude Worktrees.org*")))
+        (with-current-buffer buf
+          (read-only-mode -1)
+          (erase-buffer)
+          (insert "#+TITLE: Claude Multi-Agent Worktrees\n\n")
+          (dolist (worktree worktrees)
+            (insert (format "- %s\n" worktree)))
+          (org-mode)
+          (goto-char (point-min))
+          (read-only-mode 1))
+        (display-buffer buf))
+    (message "No git worktrees found or not in a git repository")))
+
+;;; Cleanup utilities
+
+;;;###autoload
+(defun claude-multi/cleanup-orphaned-worktrees ()
+  "Clean up worktrees that don't have corresponding active agents."
+  (interactive)
+  (when (claude-multi--in-git-repo-p)
+    (let* ((all-worktrees (claude-multi--list-worktrees))
+           (agent-worktrees (delq nil (mapcar #'claude-agent-worktree-path
+                                             claude-multi--agents)))
+           (orphaned (cl-set-difference all-worktrees agent-worktrees
+                                       :test #'string=)))
+      ;; Filter to only Claude agent worktrees
+      (setq orphaned (cl-remove-if-not
+                     (lambda (path) (string-match-p "claude" path))
+                     orphaned))
+
+      (if orphaned
+          (when (y-or-n-p (format "Found %d orphaned worktree(s). Clean them up? "
+                                 (length orphaned)))
+            (dolist (worktree orphaned)
+              (condition-case err
+                  (progn
+                    (let ((default-directory (claude-multi--get-git-root)))
+                      (call-process "git" nil nil nil
+                                   "worktree" "remove" "--force" worktree))
+                    (message "Removed orphaned worktree: %s" worktree))
+                (error
+                 (message "Failed to remove worktree %s: %s"
+                         worktree (error-message-string err))))))
+        (message "No orphaned worktrees found")))))
+
+;;; Validation utilities
+
+;;;###autoload
+(defun claude-multi--validate-git-repo ()
+  "Validate that the current directory is a git repository.
+Display helpful error messages if not."
+  (unless (executable-find "git")
+    (user-error "Git executable not found. Please install git"))
+  (unless (claude-multi--in-git-repo-p)
+    (user-error "Not in a git repository. Please run this from a git repository")))
+
+(defun claude-multi--check-uncommitted-changes ()
+  "Return non-nil if there are uncommitted changes in the repository."
+  (when (claude-multi--in-git-repo-p)
+    (let ((default-directory (claude-multi--get-git-root)))
+      (with-temp-buffer
+        (call-process "git" nil t nil "status" "--porcelain")
+        (> (buffer-size) 0)))))
+
+;;;###autoload
+(defun claude-multi--warn-uncommitted-changes ()
+  "Warn the user if there are uncommitted changes.
+Returns t to continue, nil to abort."
+  (if (claude-multi--check-uncommitted-changes)
+      (yes-or-no-p "You have uncommitted changes. Continue creating worktrees? ")
+    t))
+
+;;; Worktree status
+
+;;;###autoload
+(defun claude-multi/worktree-status (agent)
+  "Show the git status of AGENT's worktree."
+  (interactive
+   (list (claude-multi--select-agent claude-multi--agents "Show worktree status for: ")))
+  (if-let ((worktree-path (claude-agent-worktree-path agent)))
+      (let ((default-directory worktree-path))
+        (magit-status))
+    (message "Agent %s has no worktree" (claude-agent-name agent))))
+
+(provide 'claude-multi-worktree)
+;;; worktree.el ends here
