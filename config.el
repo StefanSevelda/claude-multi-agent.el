@@ -55,7 +55,7 @@ Available methods: popup, markdown, modeline, sound"
   :group 'claude-multi)
 
 (defcustom claude-multi-buffer-cleanup 'auto-close-success
-  "How to handle eshell buffers when agents complete.
+  "How to handle vterm buffers when agents complete.
 'keep-all - Keep all buffers open
 'auto-close-success - Close successful agents, keep failed ones
 'ask - Ask before closing each buffer"
@@ -177,7 +177,7 @@ Available methods: popup, markdown, modeline, sound"
 
 ;;;###autoload
 (defun claude-multi/focus-agent ()
-  "Switch to a specific agent's eshell buffer."
+  "Switch to a specific agent's vterm buffer."
   (interactive)
   (if (null claude-multi--agents)
       (message "No active agents")

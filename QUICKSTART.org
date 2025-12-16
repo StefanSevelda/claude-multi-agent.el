@@ -1,0 +1,191 @@
+#+TITLE: Claude Multi-Agent - Quick Start Guide
+#+DATE: 2025-12-15
+
+* Installation Status
+
+✅ Module installed at: =~/.config/emacs/.doom.d/modules/tools/claude-multi=
+✅ Enabled in: =~/.config/emacs/.doom.d/init.el=
+✅ Dependencies installed via =doom sync=
+✅ Ready to use!
+
+* Next Step: Restart Emacs
+
+You need to restart Emacs for the changes to take effect.
+
+Alternatively, you can reload the configuration:
+#+begin_src emacs-lisp
+M-x doom/reload
+#+end_src
+
+* Quick Start Commands
+
+After restarting Emacs:
+
+** Basic Workflow
+
+1. *Start a session*: =SPC c m s=
+   - Opens org-mode progress buffer
+   - Initializes notification system
+
+2. *Spawn agents*: =SPC c m a=
+   - Enter task description
+   - Agent gets dedicated worktree
+   - Agent runs in color-coded eshell
+
+3. *Monitor progress*: =SPC c m p=
+   - View org-mode progress buffer
+   - Real-time updates with timestamps
+
+4. *Respond to agents*: =SPC c m i=
+   - When agent needs input (notification appears)
+   - Select agent and provide response
+
+** All Commands
+
+| Key       | Command                     | Description                    |
+|-----------+-----------------------------+--------------------------------|
+| =SPC c m s= | claude-multi/start-session  | Initialize session             |
+| =SPC c m a= | claude-multi/spawn-agent    | Spawn new agent                |
+| =SPC c m p= | claude-multi/open-progress  | Open progress buffer           |
+| =SPC c m d= | claude-multi/dashboard      | Show agent dashboard           |
+| =SPC c m i= | claude-multi/send-input     | Send input to waiting agent    |
+| =SPC c m f= | claude-multi/focus-agent    | Focus on agent's eshell        |
+| =SPC c m k= | claude-multi/kill-agent     | Kill specific agent            |
+| =SPC c m K= | claude-multi/kill-all-agents | Kill all agents                |
+| =SPC c m e= | claude-multi/export-progress | Export progress to .org file   |
+| =SPC c m w= | claude-multi/show-waiting-agents | Show agents waiting for input |
+| =SPC c m t= | claude-multi/list-worktrees | List all worktrees             |
+| =SPC c m c= | claude-multi/cleanup-orphaned-worktrees | Cleanup worktrees |
+
+* Example Session
+
+** Scenario: Implement a new feature with multiple agents
+
+1. Navigate to your project directory in Emacs
+
+2. Start session:
+   #+begin_src
+   SPC c m s
+   #+end_src
+
+3. Spawn agents for parallel work:
+   #+begin_src
+   SPC c m a  → "Implement user authentication API"
+   SPC c m a  → "Add unit tests for authentication"
+   SPC c m a  → "Update API documentation"
+   #+end_src
+
+4. Monitor in progress buffer:
+   - Each agent shows real-time output
+   - Org-mode properties track status
+   - Timestamps for every action
+
+5. When agent needs input (🔔 notification):
+   #+begin_src
+   SPC c m i  → Select agent → Provide response
+   #+end_src
+
+6. View results:
+   - Each agent worked in its own worktree
+   - No conflicts between agents
+   - Review changes in separate branches
+
+7. Merge successful changes:
+   #+begin_src shell
+   git merge claude/agent-1
+   git merge claude/agent-2
+   #+end_src
+
+* Org-Mode Progress Buffer
+
+The progress buffer uses org-mode features:
+
+** Properties Drawers
+Each agent has properties:
+#+begin_example
+:PROPERTIES:
+:ID: agent-1
+:STATUS: RUNNING
+:WORKTREE: ../claude-worktrees/myproject-agent-1
+:CREATED: [2025-12-15 Sun 14:30:05]
+:END:
+#+end_example
+
+** Timestamps
+All actions are timestamped:
+#+begin_example
+- <14:30:10> 🟢 :: Analyzing codebase...
+- <14:30:15> 🟢 :: Found 5 files to modify
+- <14:30:20> 🟡 :: Waiting for input
+#+end_example
+
+** Folding
+Use org-mode folding to collapse/expand:
+- =TAB= on heading to fold/unfold
+- =S-TAB= to fold/unfold all
+
+* Configuration
+
+Add to =~/.config/emacs/.doom.d/config.el=:
+
+#+begin_src emacs-lisp
+;; Worktree location
+(setq claude-multi-worktree-location 'adjacent)  ; or 'internal
+
+;; Auto-cleanup completed agents
+(setq claude-multi-auto-cleanup t)
+
+;; Notification methods
+(setq claude-multi-notification-methods '(popup markdown modeline sound))
+
+;; Buffer cleanup strategy
+(setq claude-multi-buffer-cleanup 'auto-close-success)
+
+;; Custom colors for agents
+(setq claude-multi-agent-colors
+      '("#FF6B6B" "#4ECDC4" "#45B7D1" "#FFA07A" "#98D8C8"
+        "#F7DC6F" "#BB8FCE" "#85C1E2" "#F8B739" "#52B788"))
+#+end_src
+
+* Troubleshooting
+
+** Claude not found
+#+begin_src shell
+which claude
+#+end_src
+
+If not found, add to PATH or Emacs exec-path:
+#+begin_src emacs-lisp
+(add-to-list 'exec-path "/path/to/claude")
+#+end_src
+
+** Notifications not working
+Check alert package is installed:
+#+begin_src shell
+~/.config/emacs/.emacs.d/bin/doom sync
+#+end_src
+
+** Worktrees failing
+Verify git repository:
+#+begin_src shell
+git rev-parse --is-inside-work-tree
+#+end_src
+
+Plugin will fallback to shared directory if worktrees fail.
+
+* Features
+
+✨ *Parallel Execution* - Run multiple claude-code instances simultaneously
+🌳 *Git Worktrees* - Each agent in isolated worktree with unique branch
+📊 *Org-Mode Tracking* - Beautiful progress tracking with properties and timestamps
+🔔 *Smart Notifications* - Popup, visual, modeline, and sound alerts
+🎨 *Color Coding* - Each agent has unique color for visual distinction
+🧹 *Auto Cleanup* - Automatic worktree and resource cleanup
+
+* Documentation
+
+- Full docs: =~/projects/claude-multi-agent.el/README.org=
+- Source code: =~/projects/claude-multi-agent.el/=
+- Config: =~/.config/emacs/.doom.d/modules/tools/claude-multi/=
+
+Enjoy parallel Claude development! 🚀

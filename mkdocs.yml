@@ -1,0 +1,9 @@
+site_name: 'claude-multi-agent.el'
+docs_dir: 'docs'
+site_dir: 'site'
+plugins:
+  - techdocs-core
+  - callouts
+  - kroki:
+      fence_prefix: ""
+      enable_diagramsnet: True

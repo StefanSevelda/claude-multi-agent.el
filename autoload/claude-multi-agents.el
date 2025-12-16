@@ -52,7 +52,7 @@ Does not launch the agent process yet."
 
 ;;;###autoload
 (defun claude-multi--launch-agent (agent)
-  "Launch the AGENT by creating a worktree and starting claude-code in eshell."
+  "Launch the AGENT by creating a worktree and starting claude-code in vterm."
   (condition-case err
       (progn
         ;; Create worktree if in a git repo
@@ -60,28 +60,29 @@ Does not launch the agent process yet."
           (let ((worktree-path (claude-multi--create-worktree agent)))
             (setf (claude-agent-worktree-path agent) worktree-path)))
 
-        ;; Create eshell buffer and start process
-        (let* ((eshell-buffer-name (format "*eshell-%s*" (claude-agent-name agent)))
+        ;; Create vterm buffer and start process
+        (let* ((vterm-buffer-name (format "*vterm-%s*" (claude-agent-name agent)))
                (default-directory (or (claude-agent-worktree-path agent) default-directory))
-               (eshell-buf (save-window-excursion
-                            (eshell 'new))))
-          (setf (claude-agent-buffer agent) eshell-buf)
+               (vterm-buf (save-window-excursion
+                            (vterm t))))
+          (setf (claude-agent-buffer agent) vterm-buf)
           (setf (claude-agent-status agent) 'running)
 
           ;; Setup output monitoring
-          (with-current-buffer eshell-buf
-            (rename-buffer eshell-buffer-name t)
+          (with-current-buffer vterm-buf
+            (rename-buffer vterm-buffer-name t)
             ;; Set buffer-local variable to track which agent this is
             (setq-local claude-multi--current-agent agent)
-            ;; Add output filter
-            (add-hook 'eshell-output-filter-functions
-                     #'claude-multi--filter-agent-output nil t))
+            ;; Setup process output filter
+            (claude-multi--setup-vterm-output-monitor agent))
 
-          ;; Start claude-code
-          (claude-multi--send-to-eshell eshell-buf
-                                       (format "%s \"%s\""
-                                              claude-multi-claude-command
-                                              (claude-agent-task-description agent)))
+          ;; Start claude-code (after a short delay to ensure vterm is ready)
+          (run-with-timer 0.5 nil
+                         (lambda ()
+                           (claude-multi--send-to-vterm vterm-buf
+                                                       (format "%s \"%s\""
+                                                              claude-multi-claude-command
+                                                              (claude-agent-task-description agent)))))
 
           ;; Update progress buffer
           (claude-multi--add-agent-section agent)))
@@ -92,49 +93,53 @@ Does not launch the agent process yet."
              (claude-agent-name agent)
              (error-message-string err)))))
 
-(defun claude-multi--send-to-eshell (buffer command)
-  "Send COMMAND to eshell BUFFER."
+(defun claude-multi--send-to-vterm (buffer command)
+  "Send COMMAND to vterm BUFFER."
   (with-current-buffer buffer
-    (goto-char (point-max))
-    (insert command)
-    (eshell-send-input)))
+    (vterm-send-string command)
+    (vterm-send-return)))
 
 ;;; Agent monitoring
 
-;;;###autoload
-(defun claude-multi--filter-agent-output ()
-  "Filter function for eshell output. Processes output from agents.
-This function is called by `eshell-output-filter-functions' with no arguments.
-It retrieves the output from the current buffer between `eshell-last-output-start'
-and `eshell-last-output-end'."
-  (when (and (boundp 'claude-multi--current-agent)
-             (boundp 'eshell-last-output-start)
-             (boundp 'eshell-last-output-end))
-    (let ((agent claude-multi--current-agent))
-      (when agent
-        (let ((output (buffer-substring-no-properties
-                      eshell-last-output-start
-                      eshell-last-output-end)))
-          ;; Update last output
-          (setf (claude-agent-last-output agent) output)
+(defun claude-multi--setup-vterm-output-monitor (agent)
+  "Setup output monitoring for AGENT's vterm buffer using process filter."
+  (let* ((buffer (claude-agent-buffer agent))
+         (process (get-buffer-process buffer)))
+    (when process
+      ;; Store the original filter if any
+      (let ((original-filter (process-filter process)))
+        (setf (claude-agent-process agent) process)
+        ;; Set up our custom filter
+        (set-process-filter
+         process
+         (lambda (proc string)
+           ;; Call original filter first if it exists
+           (when (and original-filter (functionp original-filter))
+             (funcall original-filter proc string))
+           ;; Process output for our agent monitoring
+           (claude-multi--process-vterm-output agent string)))))))
 
-          ;; Check for input requests
-          (when (claude-multi--detect-input-request output)
-            (setf (claude-agent-status agent) 'waiting-input)
-            (claude-multi--notify-input-needed agent))
+(defun claude-multi--process-vterm-output (agent output)
+  "Process OUTPUT from AGENT's vterm buffer."
+  (when agent
+    ;; Update last output
+    (setf (claude-agent-last-output agent) output)
 
-          ;; Check for completion
-          (when (claude-multi--detect-completion output)
-            (claude-multi--handle-agent-completion agent))
+    ;; Check for input requests
+    (when (claude-multi--detect-input-request output)
+      (setf (claude-agent-status agent) 'waiting-input)
+      (claude-multi--notify-input-needed agent))
 
-          ;; Check for errors
-          (when (claude-multi--detect-error output)
-            (setf (claude-agent-status agent) 'failed))
+    ;; Check for completion
+    (when (claude-multi--detect-completion output)
+      (claude-multi--handle-agent-completion agent))
 
-          ;; Update progress buffer
-          (claude-multi--append-agent-output agent output)))))
-  ;; Always return nil to avoid interfering with other filters
-  nil)
+    ;; Check for errors
+    (when (claude-multi--detect-error output)
+      (setf (claude-agent-status agent) 'failed))
+
+    ;; Update progress buffer
+    (claude-multi--append-agent-output agent output)))
 
 (defun claude-multi--detect-completion (output)
   "Return non-nil if OUTPUT indicates the agent has completed successfully."
@@ -166,7 +171,7 @@ and `eshell-last-output-end'."
   (claude-multi--handle-buffer-cleanup agent))
 
 (defun claude-multi--handle-buffer-cleanup (agent)
-  "Handle cleanup of AGENT's eshell buffer based on configuration."
+  "Handle cleanup of AGENT's vterm buffer based on configuration."
   (pcase claude-multi-buffer-cleanup
     ('keep-all nil) ; Do nothing
     ('auto-close-success
@@ -182,7 +187,7 @@ and `eshell-last-output-end'."
 (defun claude-multi--send-input-to-agent (agent input)
   "Send INPUT to AGENT."
   (when (buffer-live-p (claude-agent-buffer agent))
-    (claude-multi--send-to-eshell (claude-agent-buffer agent) input)
+    (claude-multi--send-to-vterm (claude-agent-buffer agent) input)
     (setf (claude-agent-status agent) 'running)
     (claude-multi--clear-notifications agent)
     (claude-multi--update-agent-status agent)))
@@ -194,9 +199,9 @@ and `eshell-last-output-end'."
     ;; Kill the process
     (when (and (claude-agent-buffer agent)
                (buffer-live-p (claude-agent-buffer agent)))
-      (with-current-buffer (claude-agent-buffer agent)
-        (when (eshell-process)
-          (delete-process (eshell-process))))
+      (let ((proc (get-buffer-process (claude-agent-buffer agent))))
+        (when proc
+          (delete-process proc)))
       (kill-buffer (claude-agent-buffer agent)))
 
     ;; Cleanup worktree
