@@ -7,6 +7,20 @@
 
 ;;; Code:
 
+;; Add autoload directory to load path and load modules
+(let ((autoload-dir (expand-file-name "autoload"
+                                      (or (and load-file-name
+                                               (file-name-directory load-file-name))
+                                          (and (boundp 'byte-compile-current-file)
+                                               byte-compile-current-file
+                                               (file-name-directory byte-compile-current-file))
+                                          default-directory))))
+  (add-to-list 'load-path autoload-dir)
+  (require 'claude-multi-agents)
+  (require 'claude-multi-progress)
+  (require 'claude-multi-worktree)
+  (require 'claude-multi-notifications))
+
 (defgroup claude-multi nil
   "Manage multiple Claude Code agents in parallel."
   :group 'tools
@@ -23,6 +37,12 @@
 (defcustom claude-multi-auto-cleanup t
   "Automatically cleanup worktrees when agents complete."
   :type 'boolean
+  :group 'claude-multi)
+
+(defcustom claude-multi-claude-command "claude"
+  "Command to run Claude Code CLI.
+This can be customized to use different binary names (e.g., 'claude26')."
+  :type 'string
   :group 'claude-multi)
 
 (defcustom claude-multi-notification-methods '(popup markdown modeline)
