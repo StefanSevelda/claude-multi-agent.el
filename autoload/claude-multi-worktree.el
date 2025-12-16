@@ -42,8 +42,10 @@ Returns the path to the worktree, or nil if creation failed."
       (let* ((repo-root (claude-multi--get-git-root))
              (repo-name (file-name-nondirectory repo-root))
              (agent-id (claude-agent-id agent))
-             (branch-name (format "claude/%s" agent-id))
-             (worktree-path (claude-multi--determine-worktree-path repo-root repo-name agent-id)))
+             (branch-name (or (claude-agent-branch-name agent)
+                             (format "claude/%s" agent-id)))
+             (worktree-path (or (claude-agent-worktree-path agent)
+                               (claude-multi--determine-worktree-path repo-root repo-name agent-id))))
 
         ;; Ensure the worktree parent directory exists
         (let ((worktree-parent (file-name-directory worktree-path)))
@@ -54,18 +56,29 @@ Returns the path to the worktree, or nil if creation failed."
         (when (file-exists-p worktree-path)
           (error "Worktree path already exists: %s" worktree-path))
 
-        ;; Create the worktree with a new branch
+        ;; Create the worktree with a new branch or checkout existing branch
         (let ((default-directory repo-root))
           (with-temp-buffer
-            (let ((exit-code (call-process "git" nil t nil
-                                          "worktree" "add"
-                                          "-b" branch-name
-                                          worktree-path
-                                          "HEAD")))
+            (let* ((branch-exists (= 0 (call-process "git" nil nil nil
+                                                     "rev-parse" "--verify"
+                                                     branch-name)))
+                   (exit-code (if branch-exists
+                                  ;; Branch exists, check it out
+                                  (call-process "git" nil t nil
+                                               "worktree" "add"
+                                               worktree-path
+                                               branch-name)
+                                ;; Branch doesn't exist, create new one
+                                (call-process "git" nil t nil
+                                             "worktree" "add"
+                                             "-b" branch-name
+                                             worktree-path
+                                             "HEAD"))))
               (unless (= 0 exit-code)
                 (error "Git worktree add failed: %s" (buffer-string))))))
 
-        (message "Created worktree for %s at %s" (claude-agent-name agent) worktree-path)
+        (message "Created worktree for %s at %s (branch: %s)"
+                (claude-agent-name agent) worktree-path branch-name)
         worktree-path)
 
     (error

@@ -7,7 +7,6 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'vterm)
 
 ;;; Agent structure
 
@@ -16,11 +15,13 @@
   id                    ; Unique identifier (string)
   name                  ; Human-readable name (string)
   color                 ; Hex color code for visual distinction (string)
-  process               ; vterm process
-  buffer                ; vterm buffer
+  kitty-window-id       ; Kitty window ID (string)
+  kitty-tab-id          ; Kitty tab ID (string or nil)
+  context-buffer        ; Emacs buffer for context/notes
+  status-timer          ; Timer for polling kitty status
   worktree-path         ; Git worktree path (string or nil)
+  branch-name           ; Git branch name for worktree (string or nil)
   status                ; Agent status symbol: running, waiting-input, completed, failed
-  last-output           ; Last output line (string)
   task-description      ; Original task description (string)
   created-at            ; Timestamp when created
   completed-at)         ; Timestamp when finished (or nil)
@@ -48,41 +49,99 @@ Does not launch the agent process yet."
         (index (mod claude-multi--agent-id-counter (length claude-multi-agent-colors))))
     (nth index colors)))
 
+(defun claude-multi--get-agent-color-scheme (agent)
+  "Get the full color scheme for AGENT based on its agent ID counter.
+Returns a plist with :name, :color, :text, :bg properties."
+  (let* ((agent-num (string-to-number
+                     (replace-regexp-in-string "agent-" "" (claude-agent-id agent))))
+         (index (mod (1- agent-num) (length claude-multi-agent-color-schemes)))
+         (scheme (nth index claude-multi-agent-color-schemes)))
+    (cdr scheme)))
+
 ;;; Agent launching
 
 ;;;###autoload
 (defun claude-multi--launch-agent (agent)
-  "Launch the AGENT by creating a worktree and starting claude-code in vterm."
+  "Launch AGENT in kitty terminal."
   (condition-case err
-      (progn
-        ;; Create worktree if in a git repo
-        (when (claude-multi--in-git-repo-p)
+      (let* ((agent-id (claude-agent-id agent))
+             (task-short (if (> (length (claude-agent-task-description agent)) 40)
+                            (concat (substring (claude-agent-task-description agent) 0 37) "...")
+                          (claude-agent-task-description agent)))
+             (session-name (format "[%s] %s" agent-id task-short))
+             (listen-addr (or claude-multi-kitty-listen-address
+                             (getenv "KITTY_LISTEN_ON")
+                             "unix:/tmp/kitty-claude")))
+
+        ;; Create worktree only if:
+        ;; 1. We're in a git repo AND
+        ;; 2. A branch name is specified (meaning user wants a worktree)
+        (when (and (claude-multi--in-git-repo-p)
+                   (claude-agent-branch-name agent))
           (let ((worktree-path (claude-multi--create-worktree agent)))
             (setf (claude-agent-worktree-path agent) worktree-path)))
 
-        ;; Create vterm buffer and start process
-        (let* ((vterm-buffer-name (format "*vterm-%s*" (claude-agent-name agent)))
-               (default-directory (or (claude-agent-worktree-path agent) default-directory))
-               (vterm-buf (save-window-excursion
-                            (vterm t))))
-          (setf (claude-agent-buffer agent) vterm-buf)
+        (let* ((worktree-path (or (claude-agent-worktree-path agent) default-directory))
+               ;; Launch kitty and get window ID
+               (window-type (symbol-name (or claude-multi-kitty-window-type 'os-window)))
+               (launch-output
+                (shell-command-to-string
+                 (format "kitty @ --to=%s launch --type=%s --cwd=%s --title='%s'"
+                        listen-addr
+                        window-type
+                        (shell-quote-argument worktree-path)
+                        session-name)))
+               (window-id (string-trim launch-output)))
+
+          ;; Store kitty session info
+          (setf (claude-agent-kitty-window-id agent) window-id)
+          (setf (claude-agent-context-buffer agent)
+                (generate-new-buffer (format "*claude-context-%s*" agent-id)))
           (setf (claude-agent-status agent) 'running)
 
-          ;; Setup output monitoring
-          (with-current-buffer vterm-buf
-            (rename-buffer vterm-buffer-name t)
-            ;; Set buffer-local variable to track which agent this is
-            (setq-local claude-multi--current-agent agent)
-            ;; Setup process output filter
-            (claude-multi--setup-vterm-output-monitor agent))
+          ;; Set tab and terminal colors using agent's color scheme
+          (let* ((color-scheme (claude-multi--get-agent-color-scheme agent))
+                 (accent-color (plist-get color-scheme :color))
+                 (text-color (plist-get color-scheme :text))
+                 (bg-color (plist-get color-scheme :bg))
+                 (wid window-id)
+                 (addr listen-addr))
+            (run-with-timer 0.2 nil
+                           `(lambda ()
+                              ;; Set tab color with white text
+                              (call-process-shell-command
+                               (format "kitty @ --to=%s set-tab-color --match=id:%s active_bg=\"%s\" active_fg=\"#FFFFFF\""
+                                      ,addr ,wid ,accent-color)
+                               nil 0)
+                              ;; Set terminal colors using full color scheme (only for this window)
+                              (call-process-shell-command
+                               (format "kitty @ --to=%s set-colors --match=id:%s foreground=\"%s\" background=\"%s\" cursor=\"%s\" cursor_text_color=\"#000000\" active_border_color=\"%s\" selection_background=\"%s\" selection_foreground=\"#000000\""
+                                      ,addr ,wid
+                                      ,text-color    ; Terminal text color from scheme
+                                      ,bg-color      ; Terminal background from scheme
+                                      ,accent-color  ; Cursor in agent accent color
+                                      ,accent-color  ; Border in agent accent color
+                                      ,accent-color) ; Selection in agent accent color
+                               nil 0))))
 
-          ;; Start claude-code (after a short delay to ensure vterm is ready)
+          ;; Initialize context buffer with task info
+          (with-current-buffer (claude-agent-context-buffer agent)
+            (insert (format "# Agent: %s\n" (claude-agent-name agent)))
+            (insert (format "Task: %s\n" (claude-agent-task-description agent)))
+            (insert (format "Worktree: %s\n" (or worktree-path "N/A")))
+            (insert (format "Started: %s\n\n" (format-time-string "%Y-%m-%d %H:%M:%S")))
+            (org-mode))
+
+          ;; Start lightweight status monitoring
+          (claude-multi--setup-kitty-status-monitor agent)
+
+          ;; Send initial command after delay
           (run-with-timer 0.5 nil
                          (lambda ()
-                           (claude-multi--send-to-vterm vterm-buf
-                                                       (format "%s \"%s\""
-                                                              claude-multi-claude-command
-                                                              (claude-agent-task-description agent)))))
+                           (claude-multi--send-to-kitty
+                            agent
+                            ;; Just start claude26 without arguments
+                            claude-multi-claude-command)))
 
           ;; Update progress buffer
           (claude-multi--add-agent-section agent)))
@@ -93,65 +152,45 @@ Does not launch the agent process yet."
              (claude-agent-name agent)
              (error-message-string err)))))
 
-(defun claude-multi--send-to-vterm (buffer command)
-  "Send COMMAND to vterm BUFFER."
-  (with-current-buffer buffer
-    (vterm-send-string command)
-    (vterm-send-return)))
+(defun claude-multi--send-to-kitty (agent command)
+  "Send initial COMMAND to AGENT's kitty window to start Claude."
+  (let* ((window-id (claude-agent-kitty-window-id agent))
+         (listen-addr (or claude-multi-kitty-listen-address
+                         (getenv "KITTY_LISTEN_ON")
+                         "unix:/tmp/kitty-claude"))
+         (escaped-cmd (replace-regexp-in-string "'" "'\\''" command)))
+    (call-process-shell-command
+     (format "kitty @ --to=%s send-text --match=id:%s '%s\n'"
+            listen-addr window-id escaped-cmd)
+     nil 0)))
 
 ;;; Agent monitoring
 
-(defun claude-multi--setup-vterm-output-monitor (agent)
-  "Setup output monitoring for AGENT's vterm buffer using process filter."
-  (let* ((buffer (claude-agent-buffer agent))
-         (process (get-buffer-process buffer)))
-    (when process
-      ;; Store the original filter if any
-      (let ((original-filter (process-filter process)))
-        (setf (claude-agent-process agent) process)
-        ;; Set up our custom filter
-        (set-process-filter
-         process
-         (lambda (proc string)
-           ;; Call original filter first if it exists
-           (when (and original-filter (functionp original-filter))
-             (funcall original-filter proc string))
-           ;; Process output for our agent monitoring
-           (claude-multi--process-vterm-output agent string)))))))
+(defun claude-multi--setup-kitty-status-monitor (agent)
+  "Setup lightweight status monitoring for AGENT's kitty window."
+  (let ((timer (run-with-timer
+                5.0  ; Check every 5 seconds
+                5.0
+                (lambda () (claude-multi--check-kitty-status agent)))))
+    (setf (claude-agent-status-timer agent) timer)))
 
-(defun claude-multi--process-vterm-output (agent output)
-  "Process OUTPUT from AGENT's vterm buffer."
-  (when agent
-    ;; Update last output
-    (setf (claude-agent-last-output agent) output)
+(defun claude-multi--check-kitty-status (agent)
+  "Check basic status of AGENT's kitty window."
+  (unless (claude-multi--kitty-is-alive agent)
+    ;; Window closed - mark agent as completed
+    (when (cl-member (claude-agent-status agent) '(running waiting-input))
+      (claude-multi--handle-agent-completion agent))))
 
-    ;; Check for input requests
-    (when (claude-multi--detect-input-request output)
-      (setf (claude-agent-status agent) 'waiting-input)
-      (claude-multi--notify-input-needed agent))
-
-    ;; Check for completion
-    (when (claude-multi--detect-completion output)
-      (claude-multi--handle-agent-completion agent))
-
-    ;; Check for errors
-    (when (claude-multi--detect-error output)
-      (setf (claude-agent-status agent) 'failed))
-
-    ;; Update progress buffer
-    (claude-multi--append-agent-output agent output)))
-
-(defun claude-multi--detect-completion (output)
-  "Return non-nil if OUTPUT indicates the agent has completed successfully."
-  (or (string-match-p "Task completed successfully" output)
-      (string-match-p "All tasks completed" output)
-      (string-match-p "\\$ $" output))) ; Back at shell prompt
-
-(defun claude-multi--detect-error (output)
-  "Return non-nil if OUTPUT indicates an error occurred."
-  (or (string-match-p "Error:" output)
-      (string-match-p "Failed:" output)
-      (string-match-p "Exception:" output)))
+(defun claude-multi--kitty-is-alive (agent)
+  "Check if AGENT's kitty window still exists."
+  (let* ((window-id (claude-agent-kitty-window-id agent))
+         (listen-addr (or claude-multi-kitty-listen-address
+                         (getenv "KITTY_LISTEN_ON")
+                         "unix:/tmp/kitty-claude")))
+    (= 0 (call-process-shell-command
+          (format "kitty @ --to=%s ls --match=id:%s 2>/dev/null"
+                 listen-addr window-id)
+          nil nil))))
 
 ;;;###autoload
 (defun claude-multi--handle-agent-completion (agent)
@@ -171,38 +210,44 @@ Does not launch the agent process yet."
   (claude-multi--handle-buffer-cleanup agent))
 
 (defun claude-multi--handle-buffer-cleanup (agent)
-  "Handle cleanup of AGENT's vterm buffer based on configuration."
+  "Handle cleanup of AGENT's kitty window based on configuration."
   (pcase claude-multi-buffer-cleanup
-    ('keep-all nil) ; Do nothing
+    ('keep-all nil)  ; User manually closes kitty windows
     ('auto-close-success
      (when (eq (claude-agent-status agent) 'completed)
-       (kill-buffer (claude-agent-buffer agent))))
+       ;; Only cleanup worktree, leave kitty window for user to review
+       (when (claude-agent-worktree-path agent)
+         (claude-multi--delete-worktree agent))))
     ('ask
-     (when (y-or-n-p (format "Close buffer for %s? " (claude-agent-name agent)))
-       (kill-buffer (claude-agent-buffer agent))))))
+     (when (y-or-n-p (format "Close kitty window for %s? " (claude-agent-name agent)))
+       (claude-multi--kill-agent agent)))))
 
 ;;; Agent interaction
 
-;;;###autoload
-(defun claude-multi--send-input-to-agent (agent input)
-  "Send INPUT to AGENT."
-  (when (buffer-live-p (claude-agent-buffer agent))
-    (claude-multi--send-to-vterm (claude-agent-buffer agent) input)
-    (setf (claude-agent-status agent) 'running)
-    (claude-multi--clear-notifications agent)
-    (claude-multi--update-agent-status agent)))
+;; Note: claude-multi--send-input-to-agent is no longer needed
+;; User interacts directly in kitty terminal
 
 ;;;###autoload
 (defun claude-multi--kill-agent (agent)
   "Kill AGENT and cleanup all resources."
   (when agent
-    ;; Kill the process
-    (when (and (claude-agent-buffer agent)
-               (buffer-live-p (claude-agent-buffer agent)))
-      (let ((proc (get-buffer-process (claude-agent-buffer agent))))
-        (when proc
-          (delete-process proc)))
-      (kill-buffer (claude-agent-buffer agent)))
+    ;; Cancel status timer
+    (when-let ((timer (claude-agent-status-timer agent)))
+      (cancel-timer timer))
+
+    ;; Close kitty window
+    (let* ((window-id (claude-agent-kitty-window-id agent))
+           (listen-addr (or claude-multi-kitty-listen-address
+                           (getenv "KITTY_LISTEN_ON")
+                           "unix:/tmp/kitty-claude")))
+      (call-process-shell-command
+       (format "kitty @ --to=%s close-window --match=id:%s"
+              listen-addr window-id)
+       nil 0))
+
+    ;; Cleanup context buffer
+    (when-let ((buf (claude-agent-context-buffer agent)))
+      (kill-buffer buf))
 
     ;; Cleanup worktree
     (when (claude-agent-worktree-path agent)

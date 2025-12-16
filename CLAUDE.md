@@ -2,7 +2,25 @@
 
 ## Project Overview
 
-Claude Multi-Agent is an Emacs Lisp plugin that enables parallel execution of multiple Claude Code agent instances with git `worktree` isolation. Each agent runs independently in its own `vterm` buffer and optional git `worktree`.
+Claude Multi-Agent is an Emacs Lisp plugin that enables parallel execution of multiple Claude Code agent instances with git `worktree` isolation. Each agent runs independently in its own kitty terminal window and optional git `worktree`.
+
+### Dependencies
+
+- **kitty**: Terminal emulator with remote control (required)
+- **alert**: Cross-platform notifications
+- **f**, **s**, **dash**: Utility libraries
+- **buttercup**: Testing framework
+
+### Kitty Setup
+
+Enable remote control in `~/.config/kitty/kitty.conf`:
+
+```conf
+allow_remote_control yes
+listen_on unix:/tmp/kitty-claude
+```
+
+Reload kitty: `Ctrl+Shift+F5`
 
 ## Code Logic & Architecture
 
@@ -10,9 +28,9 @@ Claude Multi-Agent is an Emacs Lisp plugin that enables parallel execution of mu
 
 1. **Agent Lifecycle Management** (`autoload/claude-multi-agents.el`)
    - Agent creation, launching, monitoring, and cleanup
-   - Process management via `vterm` integration
+   - kitty window management via remote control API
    - Status tracking (pending, running, waiting-input, completed, failed)
-   - Output filtering and event detection
+   - Lightweight status monitoring (checks every 5s)
 
 2. **Progress Tracking** (`autoload/claude-multi-progress.el`)
    - Centralized markdown-based progress buffer
@@ -29,8 +47,9 @@ Claude Multi-Agent is an Emacs Lisp plugin that enables parallel execution of mu
 ### Key Design Patterns
 
 - **Struct-based agent representation**: Uses `cl-defstruct` for clean agent modeling
-- **Buffer-local tracking**: Each `vterm` buffer tracks its associated agent via `claude-multi--current-agent`
-- **Process filter monitoring**: Output filtering via `set-process-filter` for real-time event detection
+- **Hybrid interaction model**: Emacs is the control center, kitty is where user interacts with Claude
+- **Lightweight monitoring**: Polls kitty status every 5s instead of complex output parsing
+- **Context buffers**: Each agent has an Emacs buffer for metadata and notes
 - **Markdown-based UI**: Progress tracking uses markdown mode for readable, live-updating displays
 - **Color-coded agents**: Visual distinction through configurable color palette
 
@@ -57,10 +76,10 @@ Claude Multi-Agent is an Emacs Lisp plugin that enables parallel execution of mu
    - Color assignment
    - Status transitions
 
-2. **Process Management**
-   - `vterm` buffer creation
-   - Process launching and monitoring
-   - Output detection (input requests, completion, errors)
+2. **kitty Window Management**
+   - kitty window creation via remote control
+   - Status monitoring (window existence checks)
+   - Initial command sending
    - Clean shutdown and cleanup
 
 3. **Git `worktree` Operations**
@@ -83,10 +102,10 @@ Claude Multi-Agent is an Emacs Lisp plugin that enables parallel execution of mu
 
 ### Testing Best Practices
 
-- Mock external dependencies (`vterm`, git commands)
+- Mock external dependencies (kitty commands, git commands)
 - Test both success and failure paths
-- Verify buffer state after operations
-- Check cleanup happens correctly
+- Verify window state and cleanup
+- Check resource cleanup happens correctly
 - Test concurrent agent scenarios
 
 ## Code Quality Standards

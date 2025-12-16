@@ -45,6 +45,24 @@ This can be customized to use different binary names (e.g., 'claude26')."
   :type 'string
   :group 'claude-multi)
 
+(defcustom claude-multi-kitty-listen-address nil
+  "Kitty listen address for remote control.
+If nil, uses KITTY_LISTEN_ON environment variable.
+Format: unix:/tmp/kitty-claude or tcp:localhost:5555"
+  :type '(choice (const :tag "Auto-detect from env" nil)
+                 (string :tag "Custom address"))
+  :group 'claude-multi)
+
+(defcustom claude-multi-kitty-window-type 'os-window
+  "How to create kitty windows for agents.
+'os-window - New OS window (separate kitty instance)
+'tab - New tab in active kitty window
+'window - New kitty split in active tab"
+  :type '(choice (const :tag "OS Window" os-window)
+                 (const :tag "Tab" tab)
+                 (const :tag "Split Window" window))
+  :group 'claude-multi)
+
 (defcustom claude-multi-output-throttle-delay 0.5
   "Delay in seconds between progress buffer updates to reduce flashing.
 Setting this higher (e.g., 1.0) will reduce flashing but make updates less responsive.
@@ -62,19 +80,39 @@ Available methods: popup, markdown, modeline, sound"
   :group 'claude-multi)
 
 (defcustom claude-multi-buffer-cleanup 'auto-close-success
-  "How to handle vterm buffers when agents complete.
-'keep-all - Keep all buffers open
-'auto-close-success - Close successful agents, keep failed ones
-'ask - Ask before closing each buffer"
-  :type '(choice (const :tag "Keep all buffers" keep-all)
-                 (const :tag "Auto-close successful" auto-close-success)
+  "How to handle kitty windows when agents complete.
+'keep-all - Keep all windows open (user closes manually)
+'auto-close-success - Auto-cleanup worktrees for successful agents
+'ask - Ask before closing kitty windows"
+  :type '(choice (const :tag "Keep all windows" keep-all)
+                 (const :tag "Auto-cleanup worktrees" auto-close-success)
                  (const :tag "Ask before closing" ask))
   :group 'claude-multi)
 
+(defcustom claude-multi-agent-color-schemes
+  '((1  :name "Bright Red"       :color "#FF4444" :text "#FFE5E5" :bg "#1a0808")
+    (2  :name "Cyan"             :color "#00D9FF" :text "#E0F8FF" :bg "#081418")
+    (3  :name "Medium Purple"    :color "#7B68EE" :text "#EDE8FF" :bg "#100a1a")
+    (4  :name "Dark Orange"      :color "#FF8C00" :text "#FFEEDD" :bg "#1a1208")
+    (5  :name "Spring Green"     :color "#00FF7F" :text "#E0FFE8" :bg "#081a0e")
+    (6  :name "Deep Pink"        :color "#FF1493" :text "#FFE0F0" :bg "#1a0814")
+    (7  :name "Gold"             :color "#FFD700" :text "#FFFAE0" :bg "#1a1808")
+    (8  :name "Blue Violet"      :color "#8A2BE2" :text "#EFE5FF" :bg "#0e081a")
+    (9  :name "Dark Turquoise"   :color "#00CED1" :text "#E0F5F7" :bg "#081416")
+    (10 :name "Tomato Red"       :color "#FF6347" :text "#FFE8E0" :bg "#1a0e08"))
+  "Color schemes for agents. Each scheme includes:
+- :name - Descriptive name
+- :color - Main accent color (cursor, tab, selection, border)
+- :text - Terminal text color
+- :bg - Terminal background color"
+  :type 'list
+  :group 'claude-multi)
+
+;; Legacy compatibility - extract just colors for simple access
 (defcustom claude-multi-agent-colors
-  '("#FF6B6B" "#4ECDC4" "#45B7D1" "#FFA07A" "#98D8C8"
-    "#F7DC6F" "#BB8FCE" "#85C1E2" "#F8B739" "#52B788")
-  "Colors to assign to agents for visual distinction."
+  '("#FF4444" "#00D9FF" "#7B68EE" "#FF8C00" "#00FF7F"
+    "#FF1493" "#FFD700" "#8A2BE2" "#00CED1" "#FF6347")
+  "Colors to assign to agents for visual distinction (extracted from schemes)."
   :type '(repeat color)
   :group 'claude-multi)
 
@@ -112,15 +150,60 @@ Available methods: popup, markdown, modeline, sound"
   (message "Claude Multi-Agent session started. Use SPC c m a to spawn agents."))
 
 ;;;###autoload
-(defun claude-multi/spawn-agent (task-description)
-  "Spawn a new Claude agent with TASK-DESCRIPTION."
+(defun claude-multi/spawn-agent (task-description &optional directory branch)
+  "Spawn a new Claude agent with TASK-DESCRIPTION.
+Optional DIRECTORY specifies the working directory.
+Optional BRANCH specifies the git branch (creates a worktree if provided)."
   (interactive "sTask description: ")
   (unless claude-multi--session-start-time
     (claude-multi/start-session))
-  (let ((agent (claude-multi--create-agent task-description)))
+  (let ((agent (claude-multi--create-agent task-description))
+        (default-directory (or directory default-directory)))
+    ;; Set directory as worktree path (will be used as working directory)
+    (when directory
+      (setf (claude-agent-worktree-path agent) (expand-file-name directory)))
+    ;; Only set branch if provided (this triggers worktree creation)
+    (when (and branch (not (string-empty-p branch)))
+      (setf (claude-agent-branch-name agent) branch))
     (push agent claude-multi--agents)
     (claude-multi--launch-agent agent)
     (message "Spawned agent: %s" (claude-agent-name agent))))
+
+;;;###autoload
+(defun claude-multi/spawn-agent-tab (task-description)
+  "Spawn a new Claude agent in a kitty TAB with TASK-DESCRIPTION."
+  (interactive "sTask description: ")
+  (unless claude-multi--session-start-time
+    (claude-multi/start-session))
+  (let ((claude-multi-kitty-window-type 'tab)
+        (agent (claude-multi--create-agent task-description)))
+    (push agent claude-multi--agents)
+    (claude-multi--launch-agent agent)
+    (message "Spawned agent in tab: %s" (claude-agent-name agent))))
+
+;;;###autoload
+(defun claude-multi/spawn-agent-split (task-description)
+  "Spawn a new Claude agent in a kitty SPLIT WINDOW with TASK-DESCRIPTION."
+  (interactive "sTask description: ")
+  (unless claude-multi--session-start-time
+    (claude-multi/start-session))
+  (let ((claude-multi-kitty-window-type 'window)
+        (agent (claude-multi--create-agent task-description)))
+    (push agent claude-multi--agents)
+    (claude-multi--launch-agent agent)
+    (message "Spawned agent in split: %s" (claude-agent-name agent))))
+
+;;;###autoload
+(defun claude-multi/spawn-agent-with-worktree ()
+  "Spawn agent with custom directory and branch for worktree."
+  (interactive)
+  (let* ((task (read-string "Task description: "))
+         (directory (read-directory-name "Directory (for worktree): " nil nil t))
+         (branch (read-string "Branch name (optional): ")))
+    (claude-multi/spawn-agent
+     task
+     directory
+     (if (string-empty-p branch) nil branch))))
 
 ;;;###autoload
 (defun claude-multi/open-progress ()
@@ -167,30 +250,24 @@ Available methods: popup, markdown, modeline, sound"
       (goto-char (point-min)))
     (display-buffer buf)))
 
-;;;###autoload
-(defun claude-multi/send-input ()
-  "Send input to an agent waiting for response."
-  (interactive)
-  (let* ((waiting-agents (cl-remove-if-not
-                         (lambda (a) (eq (claude-agent-status a) 'waiting-input))
-                         claude-multi--agents))
-         (agent (if (= 1 (length waiting-agents))
-                   (car waiting-agents)
-                 (claude-multi--select-agent waiting-agents "Send input to agent: "))))
-    (if agent
-        (let ((input (read-string (format "Input for %s: " (claude-agent-name agent)))))
-          (claude-multi--send-input-to-agent agent input))
-      (message "No agents waiting for input"))))
+;; Note: claude-multi/send-input removed - user types directly in kitty terminal
 
 ;;;###autoload
 (defun claude-multi/focus-agent ()
-  "Switch to a specific agent's vterm buffer."
+  "Switch focus to a specific agent's kitty window."
   (interactive)
   (if (null claude-multi--agents)
       (message "No active agents")
     (let ((agent (claude-multi--select-agent claude-multi--agents "Focus on agent: ")))
       (when agent
-        (switch-to-buffer (claude-agent-buffer agent))))))
+        (let* ((window-id (claude-agent-kitty-window-id agent))
+               (listen-addr (or claude-multi-kitty-listen-address
+                               (getenv "KITTY_LISTEN_ON")
+                               "unix:/tmp/kitty-claude")))
+          (call-process-shell-command
+           (format "kitty @ --to=%s focus-window --match=id:%s"
+                  listen-addr window-id)
+           nil 0))))))
 
 ;;;###autoload
 (defun claude-multi/kill-agent ()
@@ -234,15 +311,16 @@ Available methods: popup, markdown, modeline, sound"
       :prefix ("c m" . "claude-multi")
       :desc "Start session"           "s" #'claude-multi/start-session
       :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
+      :desc "Spawn agent in tab"      "t" #'claude-multi/spawn-agent-tab
+      :desc "Spawn agent in split"    "w" #'claude-multi/spawn-agent-split
+      :desc "Spawn with worktree"     "W" #'claude-multi/spawn-agent-with-worktree
       :desc "Open progress"           "p" #'claude-multi/open-progress
       :desc "Dashboard"               "d" #'claude-multi/dashboard
-      :desc "Send input"              "i" #'claude-multi/send-input
       :desc "Focus agent"             "f" #'claude-multi/focus-agent
       :desc "Kill agent"              "k" #'claude-multi/kill-agent
       :desc "Kill all"                "K" #'claude-multi/kill-all-agents
       :desc "Export progress"         "e" #'claude-multi/export-progress
-      :desc "Show waiting agents"     "w" #'claude-multi/show-waiting-agents
-      :desc "List worktrees"          "t" #'claude-multi/list-worktrees
+      :desc "List worktrees"          "T" #'claude-multi/list-worktrees
       :desc "Cleanup worktrees"       "c" #'claude-multi/cleanup-orphaned-worktrees)
 
 (provide 'claude-multi-config)
