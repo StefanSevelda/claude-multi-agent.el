@@ -45,6 +45,13 @@ This can be customized to use different binary names (e.g., 'claude26')."
   :type 'string
   :group 'claude-multi)
 
+(defcustom claude-multi-output-throttle-delay 0.5
+  "Delay in seconds between progress buffer updates to reduce flashing.
+Setting this higher (e.g., 1.0) will reduce flashing but make updates less responsive.
+Setting to 0 disables throttling."
+  :type 'number
+  :group 'claude-multi)
+
 (defcustom claude-multi-notification-methods '(popup markdown modeline)
   "List of notification methods to use when agents need input.
 Available methods: popup, markdown, modeline, sound"

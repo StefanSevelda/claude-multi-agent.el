@@ -10,6 +10,17 @@
 (require 'f)
 (require 'org)
 
+;;; Throttling variables
+
+(defvar claude-multi--last-update-time nil
+  "Hash table tracking last update time for each agent.")
+
+(defvar claude-multi--pending-updates nil
+  "Hash table of pending output updates for each agent.")
+
+(defvar claude-multi--update-timer nil
+  "Timer for processing pending updates.")
+
 ;;; Progress buffer initialization
 
 ;;;###autoload
@@ -63,7 +74,37 @@
 
 ;;;###autoload
 (defun claude-multi--append-agent-output (agent output)
-  "Append OUTPUT from AGENT to its section in the progress buffer."
+  "Append OUTPUT from AGENT to its section in the progress buffer.
+Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'."
+  (unless claude-multi--last-update-time
+    (setq claude-multi--last-update-time (make-hash-table :test 'equal)))
+  (unless claude-multi--pending-updates
+    (setq claude-multi--pending-updates (make-hash-table :test 'equal)))
+
+  (let* ((agent-id (claude-agent-id agent))
+         (now (float-time))
+         (last-update (gethash agent-id claude-multi--last-update-time 0))
+         (delay claude-multi-output-throttle-delay))
+
+    ;; Store the pending output
+    (puthash agent-id output claude-multi--pending-updates)
+
+    ;; If throttling is disabled or enough time has passed, update immediately
+    (when (or (= delay 0) (> (- now last-update) delay))
+      (claude-multi--do-append-agent-output agent output)
+      (puthash agent-id now claude-multi--last-update-time)
+      (remhash agent-id claude-multi--pending-updates))
+
+    ;; Otherwise, schedule a delayed update if not already scheduled
+    (when (and (> delay 0)
+               (<= (- now last-update) delay)
+               (not claude-multi--update-timer))
+      (setq claude-multi--update-timer
+            (run-with-timer delay nil
+                           #'claude-multi--process-pending-updates)))))
+
+(defun claude-multi--do-append-agent-output (agent output)
+  "Actually append OUTPUT from AGENT to progress buffer without throttling."
   (when (buffer-live-p claude-multi--progress-buffer)
     (with-current-buffer claude-multi--progress-buffer
       (let ((inhibit-read-only t)
@@ -87,6 +128,19 @@
           (when (claude-multi--detect-input-request output)
             (add-text-properties (line-beginning-position) (line-end-position)
                                 '(face (:foreground "yellow" :weight bold)))))))))
+
+(defun claude-multi--process-pending-updates ()
+  "Process any pending output updates for all agents."
+  (setq claude-multi--update-timer nil)
+  (when claude-multi--pending-updates
+    (maphash
+     (lambda (agent-id output)
+       (let ((agent (claude-multi--get-agent-by-id agent-id)))
+         (when agent
+           (claude-multi--do-append-agent-output agent output)
+           (puthash agent-id (float-time) claude-multi--last-update-time))))
+     claude-multi--pending-updates)
+    (clrhash claude-multi--pending-updates)))
 
 ;;;###autoload
 (defun claude-multi--update-agent-status (agent)
