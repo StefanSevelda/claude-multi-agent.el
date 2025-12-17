@@ -63,6 +63,14 @@ Format: unix:/tmp/kitty-claude or tcp:localhost:5555"
                  (const :tag "Split Window" window))
   :group 'claude-multi)
 
+(defcustom claude-multi-agent-spawn-type 'tab
+  "How to spawn agents within the session OS window.
+'tab - Each agent gets its own tab (default)
+'split - Agents are split within tabs"
+  :type '(choice (const :tag "New tab for each agent" tab)
+                 (const :tag "Split window for each agent" split))
+  :group 'claude-multi)
+
 (defcustom claude-multi-output-throttle-delay 0.5
   "Delay in seconds between progress buffer updates to reduce flashing.
 Setting this higher (e.g., 1.0) will reduce flashing but make updates less responsive.
@@ -134,6 +142,14 @@ Available methods: popup, markdown, modeline, sound"
 (defvar claude-multi--session-start-time nil
   "Timestamp when the current session started.")
 
+(defvar claude-multi--current-session-window-id nil
+  "Kitty OS window ID for the current session.
+Set when the first agent is spawned, used to target subsequent agents.")
+
+(defvar claude-multi--current-session-tab-ids nil
+  "List of kitty tab IDs for tabs created in the current session.
+Used for round-robin split placement or intelligent tab management.")
+
 ;; Interactive commands
 
 ;;;###autoload
@@ -143,6 +159,8 @@ Available methods: popup, markdown, modeline, sound"
   (setq claude-multi--session-start-time (current-time))
   (setq claude-multi--agents nil)
   (setq claude-multi--agent-id-counter 0)
+  (setq claude-multi--current-session-window-id nil)
+  (setq claude-multi--current-session-tab-ids nil)
   ;; Setup notification system
   (claude-multi--setup-notifications)
   ;; Open progress buffer
@@ -292,6 +310,17 @@ Optional BRANCH specifies the git branch (creates a worktree if provided)."
     (setq claude-multi--agents nil)
     ;; Teardown notification system
     (claude-multi--teardown-notifications)
+    ;; Close session OS window if it exists
+    (when claude-multi--current-session-window-id
+      (let ((listen-addr (or claude-multi-kitty-listen-address
+                             (getenv "KITTY_LISTEN_ON")
+                             "unix:/tmp/kitty-claude")))
+        (call-process-shell-command
+         (format "kitty @ --to=%s close-window --match=id:%s"
+                 listen-addr
+                 claude-multi--current-session-window-id)
+         nil 0))
+      (setq claude-multi--current-session-window-id nil))
     (message "All agents killed")))
 
 ;; Progress buffer mode

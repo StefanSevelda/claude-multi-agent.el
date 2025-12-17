@@ -40,6 +40,8 @@
                        (format-time-string "%Y-%m-%d %H:%M:%S"
                                          claude-multi--session-start-time)))
         (insert (format "- Working Directory :: =%s=\n" default-directory))
+        (insert (format "- Session Window ID :: %s\n"
+                       (or claude-multi--current-session-window-id "Not created yet")))
         (insert (format "- Stats :: %d total | %d running | %d waiting | %d completed | %d failed\n\n"
                        0 0 0 0 0))
         (insert (format "* Agents\n\n"))))))
