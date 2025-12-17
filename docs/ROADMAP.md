@@ -4,7 +4,7 @@ This document outlines planned future features for the claude-multi-agent.el plu
 
 ## Overview
 
-The claude-multi-agent.el plugin enables parallel execution of multiple Claude Code agents with git worktree isolation. This roadmap extends the current capabilities to provide deeper integration between Emacs and kitty terminals, enhanced status monitoring, and automated workflow completion.
+The claude-multi-agent.el plugin enables parallel execution of multiple Claude Code agents with git `worktree` isolation. This roadmap extends the current capabilities to provide deeper integration between Emacs and kitty terminals, enhanced status monitoring, and automated workflow completion.
 
 ---
 
@@ -25,16 +25,17 @@ Core features that improve real-time communication and status visibility between
 **Implementation Notes**:
 
 - Leverage kitty's remote control API for sending commands (`kitty @ send-text`)
-- Use websockets as event mechanism to sync Emacs and Claude Code
-- Implement websocket server in Emacs to receive events from Claude terminals
+- Use `websockets` as event mechanism to sync Emacs and Claude Code
+- Implement `websocket` server in Emacs to receive events from Claude terminals
 - Create Emacs functions to read agent output in real-time
 - Implement message queue for coordinating commands
-- Reference implementation: [monet](https://github.com/stevemolitor/monet) - Communication framework between Emacs and Claude Code
+- Reference implementation: [`monet`](https://github.com/stevemolitor/monet) - Communication framework between Emacs and Claude Code
 
 **Dependencies**: None (foundational feature)
 
 **References**:
-- [monet](https://github.com/stevemolitor/monet) - Websocket-based communication between Emacs and Claude Code
+
+- [`monet`](https://github.com/stevemolitor/monet) - Websocket-based communication between Emacs and Claude Code
 
 ---
 
@@ -74,7 +75,7 @@ Core features that improve real-time communication and status visibility between
 
 **Implementation Notes**:
 
-- Add killed to status enum in claude-agent struct
+- Add `killed` to status `enum` in `claude-agent` struct
 - Modify `claude-multi/kill-agent` to set status before cleanup
 - Update progress buffer to show ⚫ icon for killed agents
 - Preserve killed agent history in session document
@@ -170,33 +171,33 @@ claude-multi-max-splits-per-tab     - Number (default: 4, max splits before new 
 
 ### - [ ] Ediff Integration for Change Review
 
-**Description**: Open Emacs ediff tool in a new buffer to review changes made by agents.
+**Description**: Open Emacs `ediff` tool in a new buffer to review changes made by agents.
 
 **Benefits**:
 
 - Review diffs without leaving Emacs
-- Use familiar Emacs ediff interface for change review
+- Use familiar Emacs `ediff` interface for change review
 - Accept/reject changes interactively
 
 **Implementation Notes**:
 
-- Track modified files in agent worktree using git status
+- Track modified files in agent `worktree` using git status
 - Create command `claude-multi/review-agent-changes`
 - Generate diffs: `git diff branch-base..agent-branch`
-- Open ediff buffer comparing base vs agent version
+- Open `ediff` buffer comparing base vs agent version
 - Support reviewing multiple files sequentially
 - Add keybinding (e.g., `SPC c m r`)
 
 **Dependencies**:
 
-- Requires git worktree integration (already implemented)
+- Requires git `worktree` integration (already implemented)
 - Enhanced by bidirectional communication for automatic change detection
 
 ---
 
 ### - [ ] Session Document Links to Diff Buffers
 
-**Description**: Clickable links/shortcuts in session document that open ediff buffers.
+**Description**: Clickable links/shortcuts in session document that open `ediff` buffers.
 
 **Benefits**:
 
@@ -208,12 +209,12 @@ claude-multi-max-splits-per-tab     - Number (default: 4, max splits before new 
 
 - Add "Changes" section under each agent in progress buffer
 - List modified files as org-mode links: `[[ediff:agent-id:file.el][file.el]]`
-- Implement custom link handler for ediff protocol
-- Link handler opens ediff for specific agent + file
+- Implement custom link handler for `ediff` protocol
+- Link handler opens `ediff` for specific agent + file
 - Auto-update links when new changes detected
 - Show file count badge (e.g., "3 files changed")
 
-**Dependencies**: Requires ediff integration feature
+**Dependencies**: Requires `ediff` integration feature
 
 ---
 
@@ -290,7 +291,7 @@ Advanced features that automate the full cycle from agent work to GitHub PR.
 5. **Cleanup Git Worktree and Directory**
    - Execute `git worktree remove --force`
    - Delete branch if PR merged or no longer needed
-   - Remove worktree directory
+   - Remove `worktree` directory
    - Clean up any temporary files
    - Close kitty window if still open
 
@@ -315,7 +316,7 @@ Advanced features that automate the full cycle from agent work to GitHub PR.
 - Change summarization (git integration)
 - GitHub integration (CLI or API)
 - Session document update capability (already implemented)
-- Git worktree cleanup (already implemented)
+- Git `worktree` cleanup (already implemented)
 
 **Configuration Variables**:
 
@@ -344,7 +345,7 @@ Suggested implementation order based on feature dependencies:
    - Claude mode tracking
 
 3. **Medium Priority - Developer Experience**
-   - ediff integration for change review
+   - `ediff` integration for change review
    - Enhanced agent status summaries
    - Session document links to diff buffers
 
