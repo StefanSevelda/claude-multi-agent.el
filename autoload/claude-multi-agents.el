@@ -82,16 +82,43 @@ Returns a plist with :name, :color, :text, :bg properties."
             (setf (claude-agent-worktree-path agent) worktree-path)))
 
         (let* ((worktree-path (or (claude-agent-worktree-path agent) default-directory))
+               ;; Check if session window still exists (might have been closed manually)
+               (session-window-exists
+                (and claude-multi--current-session-window-id
+                     (zerop (call-process-shell-command
+                             (format "kitty @ --to=%s ls --match=id:%s 2>/dev/null"
+                                     listen-addr
+                                     claude-multi--current-session-window-id)
+                             nil nil))))
+               ;; If session window was closed, reset it
+               (_ (unless session-window-exists
+                    (setq claude-multi--current-session-window-id nil)))
+               ;; Determine if this is the first agent (session window doesn't exist)
+               (is-first-agent (null claude-multi--current-session-window-id))
+               ;; For first agent: create OS window. For subsequent: create tab or split
+               (window-type (if is-first-agent
+                                "os-window"
+                              (if (eq claude-multi-agent-spawn-type 'split)
+                                  "window"
+                                "tab")))
+               ;; For subsequent agents, target the session window with --match
+               (match-clause (if is-first-agent
+                                 ""
+                               (format " --match=id:%s" claude-multi--current-session-window-id)))
                ;; Launch kitty and get window ID
-               (window-type (symbol-name (or claude-multi-kitty-window-type 'os-window)))
                (launch-output
                 (shell-command-to-string
-                 (format "kitty @ --to=%s launch --type=%s --cwd=%s --title='%s'"
+                 (format "kitty @ --to=%s launch --type=%s%s --cwd=%s --title='%s'"
                         listen-addr
                         window-type
+                        match-clause
                         (shell-quote-argument worktree-path)
                         session-name)))
                (window-id (string-trim launch-output)))
+
+          ;; Store session window ID if this is the first agent
+          (when is-first-agent
+            (setq claude-multi--current-session-window-id window-id))
 
           ;; Store kitty session info
           (setf (claude-agent-kitty-window-id agent) window-id)
@@ -256,6 +283,11 @@ Returns a plist with :name, :color, :text, :bg properties."
     ;; Remove from agents list
     (setq claude-multi--agents
           (delq agent claude-multi--agents))
+
+    ;; If this was the last agent, reset session window tracking
+    (when (null claude-multi--agents)
+      (setq claude-multi--current-session-window-id nil)
+      (setq claude-multi--current-session-tab-ids nil))
 
     ;; Update progress buffer
     (claude-multi--remove-agent-section agent)))
