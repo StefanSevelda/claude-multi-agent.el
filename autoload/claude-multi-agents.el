@@ -73,15 +73,23 @@ Returns a plist with :name, :color, :text, :bg properties."
                              (getenv "KITTY_LISTEN_ON")
                              "unix:/tmp/kitty-claude")))
 
-        ;; Create worktree only if:
-        ;; 1. We're in a git repo AND
-        ;; 2. A branch name is specified (meaning user wants a worktree)
+        ;; Calculate worktree path if branch name is specified
+        ;; (Worktree will be created in kitty terminal, not here)
         (when (and (claude-multi--in-git-repo-p)
                    (claude-agent-branch-name agent))
-          (let ((worktree-path (claude-multi--create-worktree agent)))
+          (let* ((repo-root (claude-multi--get-git-root))
+                 (repo-name (file-name-nondirectory repo-root))
+                 (branch-name (or (claude-agent-branch-name agent)
+                                 (format "claude/%s" (claude-agent-id agent))))
+                 (worktree-path (claude-multi--determine-worktree-path repo-root repo-name branch-name)))
             (setf (claude-agent-worktree-path agent) worktree-path)))
 
-        (let* ((worktree-path (or (claude-agent-worktree-path agent) default-directory))
+        (let* ((use-worktree-p (and (claude-multi--in-git-repo-p)
+                                   (claude-agent-branch-name agent)))
+               ;; If using worktree, start in repo root; otherwise use current directory
+               (starting-dir (if use-worktree-p
+                                (claude-multi--get-git-root)
+                              default-directory))
                ;; Check if session window still exists (might have been closed manually)
                (session-window-exists
                 (and claude-multi--current-session-window-id
@@ -112,7 +120,7 @@ Returns a plist with :name, :color, :text, :bg properties."
                         listen-addr
                         window-type
                         match-clause
-                        (shell-quote-argument worktree-path)
+                        (shell-quote-argument starting-dir)
                         session-name)))
                (window-id (string-trim launch-output)))
 
@@ -155,7 +163,7 @@ Returns a plist with :name, :color, :text, :bg properties."
           (with-current-buffer (claude-agent-context-buffer agent)
             (insert (format "# Agent: %s\n" (claude-agent-name agent)))
             (insert (format "Task: %s\n" (claude-agent-task-description agent)))
-            (insert (format "Worktree: %s\n" (or worktree-path "N/A")))
+            (insert (format "Worktree: %s\n" (or (claude-agent-worktree-path agent) "N/A")))
             (insert (format "Started: %s\n\n" (format-time-string "%Y-%m-%d %H:%M:%S")))
             (org-mode))
 
@@ -163,12 +171,23 @@ Returns a plist with :name, :color, :text, :bg properties."
           (claude-multi--setup-kitty-status-monitor agent)
 
           ;; Send initial command after delay
-          (run-with-timer 0.5 nil
-                         (lambda ()
-                           (claude-multi--send-to-kitty
-                            agent
-                            ;; Just start claude26 without arguments
-                            claude-multi-claude-command)))
+          (let ((use-wt use-worktree-p)  ; Capture for lambda closure
+                (agt agent)  ; Capture agent reference
+                ;; Capture git context before timer (default-directory may change)
+                (repo-root (when use-worktree-p (claude-multi--get-git-root)))
+                (worktree-path (claude-agent-worktree-path agent))
+                (branch-name (when use-worktree-p
+                              (or (claude-agent-branch-name agent)
+                                  (format "claude/%s" (claude-agent-id agent))))))
+            (run-with-timer 0.5 nil
+                           (lambda ()
+                             (if use-wt
+                                 ;; Build and send worktree creation command chain
+                                 (let ((command (claude-multi--build-worktree-command
+                                                agt repo-root worktree-path branch-name)))
+                                  (claude-multi--send-to-kitty agt command))
+                               ;; No worktree - just start Claude normally
+                               (claude-multi--send-to-kitty agt claude-multi-claude-command)))))
 
           ;; Update progress buffer
           (claude-multi--add-agent-section agent)))
@@ -185,7 +204,8 @@ Returns a plist with :name, :color, :text, :bg properties."
          (listen-addr (or claude-multi-kitty-listen-address
                          (getenv "KITTY_LISTEN_ON")
                          "unix:/tmp/kitty-claude"))
-         (escaped-cmd (replace-regexp-in-string "'" "'\\''" command)))
+         ;; Escape single quotes for shell: ' becomes '\''
+         (escaped-cmd (replace-regexp-in-string "'" "'\\\\''" command)))
     (call-process-shell-command
      (format "kitty @ --to=%s send-text --match=id:%s '%s\n'"
             listen-addr window-id escaped-cmd)
