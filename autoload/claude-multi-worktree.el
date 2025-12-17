@@ -32,7 +32,61 @@
   (string-trim
    (shell-command-to-string "git rev-parse --abbrev-ref HEAD")))
 
+(defun claude-multi--get-default-branch ()
+  "Return the default branch name (main or master) of the repository."
+  (when (claude-multi--in-git-repo-p)
+    (let ((default-directory (claude-multi--get-git-root)))
+      ;; Try to get default branch from origin/HEAD
+      (let ((remote-head (string-trim
+                         (shell-command-to-string
+                          "git symbolic-ref refs/remotes/origin/HEAD 2>/dev/null"))))
+        (if (and remote-head (not (string-empty-p remote-head)))
+            ;; Extract branch name from refs/remotes/origin/HEAD
+            (replace-regexp-in-string "^refs/remotes/origin/" "" remote-head)
+          ;; Fallback: check if main or master exists
+          (cond
+           ((= 0 (call-process "git" nil nil nil "show-ref" "--verify" "--quiet" "refs/heads/main"))
+            "main")
+           ((= 0 (call-process "git" nil nil nil "show-ref" "--verify" "--quiet" "refs/heads/master"))
+            "master")
+           ;; Default to main if neither exists
+           (t "main")))))))
+
 ;;; Worktree creation
+
+;;;###autoload
+(defun claude-multi--build-worktree-command (agent repo-root worktree-path branch-name)
+  "Build shell command to create worktree for AGENT in kitty terminal.
+REPO-ROOT is the git repository root directory.
+WORKTREE-PATH is the target path for the worktree.
+BRANCH-NAME is the branch name for the worktree.
+Returns a shell command string that creates the worktree and starts Claude."
+  (let* ((default-directory repo-root)  ; Set context for git commands
+         (default-branch (claude-multi--get-default-branch))
+         (claude-cmd (or claude-multi-claude-command "claude"))
+         ;; Build the gwt fallback command
+         ;; Check if branch already exists
+         (branch-exists-p (= 0 (call-process "git" nil nil nil
+                                            "rev-parse" "--verify"
+                                            "--quiet" branch-name)))
+         (git-worktree-cmd (if branch-exists-p
+                              (format "git worktree add '%s' '%s'"
+                                     worktree-path branch-name)
+                            (format "git worktree add '%s' -b '%s' HEAD"
+                                   worktree-path branch-name)))
+         ;; Get parent directory to ensure it exists
+         (worktree-parent (file-name-directory worktree-path)))
+    ;; Build the complete command chain
+    ;; Note: gwt likely creates parent directories, but git worktree add doesn't
+    (format "cd '%s' && git fetch origin %s && git rebase origin/%s && (gwt '%s' || (mkdir -p '%s' && %s)) && cd '%s' && %s"
+           repo-root
+           default-branch
+           default-branch
+           branch-name
+           worktree-parent
+           git-worktree-cmd
+           worktree-path
+           claude-cmd)))
 
 ;;;###autoload
 (defun claude-multi--create-worktree (agent)
@@ -45,7 +99,7 @@ Returns the path to the worktree, or nil if creation failed."
              (branch-name (or (claude-agent-branch-name agent)
                              (format "claude/%s" agent-id)))
              (worktree-path (or (claude-agent-worktree-path agent)
-                               (claude-multi--determine-worktree-path repo-root repo-name agent-id))))
+                               (claude-multi--determine-worktree-path repo-root repo-name branch-name))))
 
         ;; Ensure the worktree parent directory exists
         (let ((worktree-parent (file-name-directory worktree-path)))
@@ -88,23 +142,25 @@ Returns the path to the worktree, or nil if creation failed."
      ;; Return nil to indicate failure - agent will use current directory
      nil)))
 
-(defun claude-multi--determine-worktree-path (repo-root repo-name agent-id)
+(defun claude-multi--determine-worktree-path (repo-root repo-name branch-name)
   "Determine the worktree path based on configuration.
 REPO-ROOT is the git repository root.
 REPO-NAME is the name of the repository.
-AGENT-ID is the agent's unique identifier."
+BRANCH-NAME is the branch name for the worktree.
+
+When using 'adjacent mode, this mimics gwt behavior:
+worktrees are created as siblings to the main repo at ../<repo-name>-<branch-name>"
   (pcase claude-multi-worktree-location
     ('adjacent
-     ;; Create worktrees in ../claude-worktrees/
-     (let ((worktrees-dir (expand-file-name "../claude-worktrees" repo-root)))
-       (expand-file-name (format "%s-%s" repo-name agent-id) worktrees-dir)))
+     ;; Create worktrees as siblings to repo (same as gwt does)
+     ;; e.g., /Users/user/projects/repo-name-branch-name
+     (expand-file-name (format "../%s-%s" repo-name branch-name) repo-root))
     ('internal
      ;; Create worktrees in .git/worktrees/
-     (expand-file-name (format ".git/worktrees/%s" agent-id) repo-root))
+     (expand-file-name (format ".git/worktrees/%s" branch-name) repo-root))
     (_
-     ;; Default to adjacent
-     (let ((worktrees-dir (expand-file-name "../claude-worktrees" repo-root)))
-       (expand-file-name (format "%s-%s" repo-name agent-id) worktrees-dir)))))
+     ;; Default to adjacent (gwt-style)
+     (expand-file-name (format "../%s-%s" repo-name branch-name) repo-root))))
 
 ;;; Worktree deletion
 
