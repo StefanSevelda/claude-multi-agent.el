@@ -190,7 +190,10 @@ Returns a plist with :name, :color, :text, :bg properties."
                                (claude-multi--send-to-kitty agt claude-multi-claude-command)))))
 
           ;; Update progress buffer
-          (claude-multi--add-agent-section agent)))
+          (claude-multi--add-agent-section agent)
+
+          ;; Start watching agent's status.md file
+          (claude-multi--watch-agent-status-file agent)))
 
     (error
      (setf (claude-agent-status agent) 'failed)
@@ -299,6 +302,9 @@ Returns a plist with :name, :color, :text, :bg properties."
     ;; Cleanup worktree
     (when (claude-agent-worktree-path agent)
       (claude-multi--delete-worktree agent))
+
+    ;; Stop watching agent's status file
+    (claude-multi--stop-watching-agent-status agent)
 
     ;; Remove from agents list
     (setq claude-multi--agents
