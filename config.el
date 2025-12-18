@@ -310,6 +310,8 @@ Optional BRANCH specifies the git branch (creates a worktree if provided)."
     (setq claude-multi--agents nil)
     ;; Teardown notification system
     (claude-multi--teardown-notifications)
+    ;; Stop all status file watches
+    (claude-multi--stop-all-status-watches)
     ;; Close session OS window if it exists
     (when claude-multi--current-session-window-id
       (let ((listen-addr (or claude-multi-kitty-listen-address

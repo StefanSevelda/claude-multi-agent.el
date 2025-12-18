@@ -1,5 +1,7 @@
 # Claude Multi-Agent - Feature Roadmap
 
+<!-- vale off -->
+
 This document outlines planned future features for the claude-multi-agent.el plugin. Features are organized by implementation phase, with each phase building upon the previous one.
 
 ## Overview
@@ -11,6 +13,59 @@ The claude-multi-agent.el plugin enables parallel execution of multiple Claude C
 ## Phase 1: Enhanced Communication & Monitoring
 
 Core features that improve real-time communication and status visibility between Emacs and Claude agents.
+
+### - [x] Per-Agent Status Summary Display (JSON Format)
+
+**Description**: Display per-agent status.json content in the progress buffer with auto-refresh and structured formatting.
+
+**Benefits**:
+- Real-time visibility of each agent's activity and changes
+- Automatic updates when agent's status.json file changes
+- Structured JSON parsing with rich org-mode formatting
+- Prominent display of "waiting for input" status with questions
+- Each agent has its own status section in the progress buffer
+- Watches agent worktree directories for status file creation
+- Handles status.json creation after first Claude interaction
+- Displays recent changes, current goal, and session information
+
+**Status JSON Structure**:
+```json
+{
+  "status": "current goal/activity",
+  "timestamp": "ISO 8601 timestamp",
+  "session_started": "session start time",
+  "waiting_for_input": true/false,
+  "current_activity": {
+    "goal": "current goal",
+    "waiting": true/false
+  },
+  "changes": {
+    "recent": ["last 10 changes"],
+    "total_count": 50
+  },
+  "question": "question text (only when waiting_for_input is true)"
+}
+```
+
+**Implementation**:
+- Enhanced `claude-multi-progress.el` with per-agent status subsections
+- JSON parsing with `json-read-file` and plist handling
+- Rich org-mode formatting with sections, quotes, and centered text
+- Hash table tracking file watchers for each agent
+- File watcher using `filenotify-add-watch` for auto-refresh
+- Initially watches directory, upgrades to file watch once status.json is created
+- Recursion guard to prevent infinite update loops
+- Event filtering to only process status.json changes
+- Cleanup on agent termination
+
+**Dependencies**: None (uses status hook that generates status.json)
+
+**Files Modified**:
+- `autoload/claude-multi-progress.el` (~120 lines added)
+- `autoload/claude-multi-agents.el` (wire up per-agent file watching)
+- `config.el` (cleanup all watches on kill-all)
+
+---
 
 ### - [ ] Bidirectional Emacs-Kitty Communication
 
@@ -372,3 +427,5 @@ Additional features that may be considered after initial roadmap completion:
 ## Contributing
 
 To propose new features or discuss implementation details, please open an issue on the GitHub repository.
+
+<!-- vale on -->
