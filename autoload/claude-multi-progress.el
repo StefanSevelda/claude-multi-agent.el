@@ -645,7 +645,8 @@ Returns the position or nil if not found."
 
 ;;;###autoload
 (defun claude-multi--update-agent-status-display (agent)
-  "Update AGENT's Status section with latest status.json content from its worktree."
+  "Update AGENT's :STATUS: drawer with latest status.json content.
+The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
   ;; Guard against recursive calls
   (when (and (not claude-multi--status-update-in-progress)
              (buffer-live-p claude-multi--progress-buffer))
@@ -656,7 +657,7 @@ Returns the position or nil if not found."
                  (agent-dir (or (claude-agent-worktree-path agent) default-directory))
                  (status-file (expand-file-name "status.json" agent-dir))
                  (content (claude-multi--parse-status-json status-file)))
-            ;; Find the agent's status marker
+            ;; Find the agent's status marker inside the STATUS drawer
             (save-excursion
               (goto-char (point-min))
               (when (re-search-forward (format "<!-- status-marker-%s -->"
@@ -666,16 +667,16 @@ Returns the position or nil if not found."
                 (forward-line 1)
                 ;; Save position for insertion
                 (let ((insert-pos (point)))
-                  ;; Find and delete old content until next section
-                  (if (re-search-forward "^\\*\\*\\* \\|^\\*\\* " nil t)
-                      (delete-region insert-pos (line-beginning-position))
-                    ;; No next section found, delete to end of buffer
-                    (delete-region insert-pos (point-max)))
-                  ;; Go back to insertion point and insert new content
-                  (goto-char insert-pos)
-                  (if content
-                      (insert "\n" content "\n")
-                    (insert "\n/Status file not found or empty/\n\n")))))))
+                  ;; Find the :END: tag of the STATUS drawer
+                  (when (re-search-forward "^   :END:" nil t)
+                    (beginning-of-line)
+                    ;; Delete old content between marker and :END:
+                    (delete-region insert-pos (point))
+                    ;; Go back to insertion point and insert new content
+                    (goto-char insert-pos)
+                    (if content
+                        (insert content "\n")
+                      (insert "/Status file not found or empty/\n"))))))))
       (setq claude-multi--status-update-in-progress nil))))
 
 ;;;###autoload
