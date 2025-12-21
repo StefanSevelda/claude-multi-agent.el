@@ -166,36 +166,74 @@ worktrees are created as siblings to the main repo at ../<repo-name>-<branch-nam
 
 ;;;###autoload
 (defun claude-multi--delete-worktree (agent)
-  "Delete the worktree associated with AGENT."
+  "Delete the worktree associated with AGENT.
+Performs safety checks to avoid deleting worktrees with:
+- Stashed changes
+- Unpushed commits
+- Uncommitted changes (unless --force)"
   (when-let ((worktree-path (claude-agent-worktree-path agent)))
     (condition-case err
-        (progn
-          ;; First, remove the worktree using git
-          (let ((default-directory (claude-multi--get-git-root)))
-            (with-temp-buffer
-              (let ((exit-code (call-process "git" nil t nil
-                                            "worktree" "remove"
-                                            "--force"
-                                            worktree-path)))
-                (unless (= 0 exit-code)
-                  (error "Git worktree remove failed: %s" (buffer-string))))))
+        (let ((branch-name (format "claude/%s" (claude-agent-id agent)))
+              (default-directory (claude-multi--get-git-root))
+              (has-stash nil)
+              (has-unpushed nil)
+              (has-uncommitted nil))
+
+          ;; Check for stashed changes on this branch
+          (with-temp-buffer
+            (when (zerop (call-process "git" nil t nil "stash" "list"))
+              (goto-char (point-min))
+              (when (search-forward branch-name nil t)
+                (setq has-stash t))))
+
+          ;; Check for unpushed commits
+          (with-temp-buffer
+            (let ((default-directory worktree-path))
+              ;; Check if branch has upstream
+              (when (zerop (call-process "git" nil t nil "rev-parse" "--abbrev-ref" "@{upstream}"))
+                ;; Compare with upstream
+                (erase-buffer)
+                (when (zerop (call-process "git" nil t nil "log" "@{upstream}..HEAD" "--oneline"))
+                  (when (> (buffer-size) 0)
+                    (setq has-unpushed t))))))
+
+          ;; Check for uncommitted changes
+          (with-temp-buffer
+            (let ((default-directory worktree-path))
+              (when (zerop (call-process "git" nil t nil "status" "--porcelain"))
+                (when (> (buffer-size) 0)
+                  (setq has-uncommitted t)))))
+
+          ;; Show warning if there are safety concerns
+          (when (or has-stash has-unpushed has-uncommitted)
+            (let ((msg (concat "⚠️  Worktree has unsaved work:\n"
+                             (when has-stash "  • Stashed changes\n")
+                             (when has-unpushed "  • Unpushed commits\n")
+                             (when has-uncommitted "  • Uncommitted changes\n")
+                             (format "\nWorktree NOT deleted: %s" worktree-path))))
+              (message "%s" msg)
+              (error "Worktree has unsaved work - skipping deletion")))
+
+          ;; Safe to delete - proceed with removal
+          (with-temp-buffer
+            (let ((exit-code (call-process "git" nil t nil
+                                          "worktree" "remove"
+                                          "--force"
+                                          worktree-path)))
+              (unless (= 0 exit-code)
+                (error "Git worktree remove failed: %s" (buffer-string)))))
 
           ;; Delete the branch
-          (let ((branch-name (format "claude/%s" (claude-agent-id agent)))
-                (default-directory (claude-multi--get-git-root)))
-            (call-process "git" nil nil nil
-                         "branch" "-D" branch-name))
+          (call-process "git" nil nil nil "branch" "-D" branch-name)
 
-          (message "Deleted worktree for %s" (claude-agent-name agent)))
+          (message "✓ Deleted worktree for %s" (claude-agent-name agent)))
 
       (error
        (message "Failed to delete worktree for %s: %s"
                 (claude-agent-name agent)
                 (error-message-string err))
-       ;; Try to clean up the directory manually
-       (when (file-exists-p worktree-path)
-         (ignore-errors
-           (delete-directory worktree-path t)))))))
+       ;; Don't try to clean up manually if safety checks failed
+       nil))))
 
 ;;; Worktree listing
 

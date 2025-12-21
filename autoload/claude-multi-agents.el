@@ -192,6 +192,9 @@ Returns a plist with :name, :color, :text, :bg properties."
           ;; Update progress buffer
           (claude-multi--add-agent-section agent)
 
+          ;; Update session statistics (agent counts)
+          (claude-multi--update-session-stats)
+
           ;; Start watching agent's status.md file
           (claude-multi--watch-agent-status-file agent)))
 
@@ -279,32 +282,41 @@ Returns a plist with :name, :color, :text, :bg properties."
 
 ;;;###autoload
 (defun claude-multi--kill-agent (agent)
-  "Kill AGENT and cleanup all resources."
+  "Kill AGENT and cleanup all resources (worktree, status watch, progress buffer)."
   (when agent
+    ;; Mark agent as failed/killed and update status in progress buffer
+    (setf (claude-agent-status agent) 'failed)
+    (setf (claude-agent-completed-at agent) (current-time))
+    (claude-multi--update-agent-status agent)
+
     ;; Cancel status timer
     (when-let ((timer (claude-agent-status-timer agent)))
       (cancel-timer timer))
+
+    ;; Stop watching agent's status file
+    (claude-multi--stop-watching-agent-status agent)
 
     ;; Close kitty window
     (let* ((window-id (claude-agent-kitty-window-id agent))
            (listen-addr (or claude-multi-kitty-listen-address
                            (getenv "KITTY_LISTEN_ON")
                            "unix:/tmp/kitty-claude")))
-      (call-process-shell-command
-       (format "kitty @ --to=%s close-window --match=id:%s"
-              listen-addr window-id)
-       nil 0))
+      (when window-id
+        (call-process-shell-command
+         (format "kitty @ --to=%s close-window --match=id:%s 2>/dev/null"
+                listen-addr window-id)
+         nil 0)))
 
     ;; Cleanup context buffer
     (when-let ((buf (claude-agent-context-buffer agent)))
-      (kill-buffer buf))
+      (when (buffer-live-p buf)
+        (kill-buffer buf)))
 
-    ;; Cleanup worktree
-    (when (claude-agent-worktree-path agent)
-      (claude-multi--delete-worktree agent))
-
-    ;; Stop watching agent's status file
-    (claude-multi--stop-watching-agent-status agent)
+    ;; Cleanup worktree (respects claude-multi-auto-cleanup setting)
+    (when (and (claude-agent-worktree-path agent)
+               claude-multi-auto-cleanup)
+      (claude-multi--delete-worktree agent)
+      (message "Cleaned up worktree: %s" (claude-agent-worktree-path agent)))
 
     ;; Remove from agents list
     (setq claude-multi--agents
@@ -315,8 +327,8 @@ Returns a plist with :name, :color, :text, :bg properties."
       (setq claude-multi--current-session-window-id nil)
       (setq claude-multi--current-session-tab-ids nil))
 
-    ;; Update progress buffer
-    (claude-multi--remove-agent-section agent)))
+    ;; Update session stats after removal
+    (claude-multi--update-session-stats)))
 
 ;;; Agent listing and selection
 
@@ -357,14 +369,48 @@ Returns a plist with :name, :color, :text, :bg properties."
     (_ "❓ UNKNOWN")))
 
 (defun claude-multi--format-duration (start-time &optional end-time)
-  "Format duration between START-TIME and END-TIME (or current time)."
+  "Format duration between START-TIME and END-TIME (or current time).
+Returns a human-readable string with visual warnings for long-running agents."
   (let* ((end (or end-time (current-time)))
          (duration (time-subtract end start-time))
-         (seconds (time-to-seconds duration)))
+         (seconds (floor (time-to-seconds duration)))
+         (minutes (/ seconds 60))
+         (hours (/ seconds 3600))
+         (days (/ seconds 86400))
+         (weeks (/ seconds 604800)))
     (cond
-     ((< seconds 60) (format "%.0fs" seconds))
-     ((< seconds 3600) (format "%.1fm" (/ seconds 60.0)))
-     (t (format "%.1fh" (/ seconds 3600.0))))))
+     ;; Less than 1 minute
+     ((< seconds 60)
+      (format "%ds" seconds))
+     ;; Less than 1 hour - show minutes and seconds
+     ((< seconds 3600)
+      (let ((m (/ seconds 60))
+            (s (mod seconds 60)))
+        (if (zerop s)
+            (format "%dm" m)
+          (format "%dm %ds" m s))))
+     ;; Less than 24 hours - show hours and minutes
+     ((< seconds 86400)
+      (let* ((h (/ seconds 3600))
+             (m (/ (mod seconds 3600) 60))
+             (warning (if (>= hours 4) "⚠️ " "")))
+        (if (zerop m)
+            (format "%s%dh" warning h)
+          (format "%s%dh %dm" warning h m))))
+     ;; Less than 7 days - show days and hours with red flag
+     ((< seconds 604800)
+      (let* ((d (/ seconds 86400))
+             (h (/ (mod seconds 86400) 3600)))
+        (if (zerop h)
+            (format "🔴 %dd" d)
+          (format "🔴 %dd %dh" d h))))
+     ;; 7 days or more - show weeks and days
+     (t
+      (let* ((w (/ seconds 604800))
+             (d (/ (mod seconds 604800) 86400)))
+        (if (zerop d)
+            (format "🔴 %dw" w)
+          (format "🔴 %dw %dd" w d)))))))
 
 (provide 'claude-multi-agents)
 ;;; agents.el ends here

@@ -50,30 +50,91 @@
 
 ;;;###autoload
 (defun claude-multi--add-agent-section (agent)
-  "Add a new section for AGENT to the progress buffer."
+  "Add a new section for AGENT to the progress buffer with ultra-compact format."
   (when (buffer-live-p claude-multi--progress-buffer)
     (with-current-buffer claude-multi--progress-buffer
-      (let ((inhibit-read-only t))
+      (let* ((inhibit-read-only t)
+             (task-desc (claude-agent-task-description agent))
+             (truncated-task (if (> (length task-desc) 40)
+                                 (concat (substring task-desc 0 37) "...")
+                               task-desc))
+             (tags (when claude-multi-use-org-tags
+                     (claude-multi--agent-tags-from-status (claude-agent-status agent))))
+             (business-context (claude-multi--extract-business-context agent))
+             (agent-dir (or (claude-agent-worktree-path agent) default-directory))
+             (status-file (expand-file-name "status.json" agent-dir))
+             (ctx-pct nil)
+             (file-count nil)
+             (duration nil))
+
+        ;; Try to extract info from status.json if available
+        (when (file-exists-p status-file)
+          (condition-case nil
+              (let* ((json-object-type 'plist)
+                     (json-array-type 'list)
+                     (json-key-type 'keyword)
+                     (data (json-read-file status-file))
+                     (context (plist-get data :context_window))
+                     (git-info (plist-get data :git)))
+                (when context
+                  (setq ctx-pct (plist-get context :percentage_used)))
+                (when git-info
+                  (let ((changed-files (plist-get git-info :changed_files)))
+                    (when changed-files
+                      (setq file-count (length changed-files))))))
+            (error nil)))
+
+        ;; Calculate duration
+        (setq duration (claude-multi--format-duration (claude-agent-created-at agent)
+                                                      (claude-agent-completed-at agent)))
+
         (goto-char (point-max))
-        (insert (format "\n** %s %s\n"
-                       (claude-multi--get-status-icon (claude-agent-status agent))
-                       (claude-agent-name agent)))
-        (insert (format ":PROPERTIES:\n"))
-        (insert (format ":ID: %s\n" (claude-agent-id agent)))
-        (insert (format ":STATUS: %s\n" (upcase (symbol-name (claude-agent-status agent)))))
-        (when (claude-agent-worktree-path agent)
-          (insert (format ":WORKTREE: %s\n" (claude-agent-worktree-path agent))))
-        (insert (format ":CREATED: %s\n"
-                       (format-time-string "[%Y-%m-%d %a %H:%M:%S]"
-                                         (claude-agent-created-at agent))))
-        (insert (format ":END:\n\n"))
-        (insert (format "- Task :: %s\n\n" (claude-agent-task-description agent)))
-        (insert (format "*** Progress\n\n"))
-        (claude-multi--insert-agent-marker agent)
+
+        ;; Ultra-compact headline format:
+        ;; ** EMOJI AGENT-ID | DOMAIN | TASK | DURATION | CTX% | FILES | :tags:
+        (insert (format "\n** %s "
+                       (claude-multi--get-status-icon (claude-agent-status agent))))
+
+        ;; Insert agent ID with color matching kitty tab
+        (let ((agent-id-start (point)))
+          (insert (claude-agent-id agent))
+          (add-text-properties agent-id-start (point)
+                               `(face (:foreground ,(claude-agent-color agent) :weight bold))))
+
+        ;; Add business domains if available (extract from business-context)
+        (when business-context
+          ;; Extract just the domain part (before the pipe)
+          (let ((domain-part (if (string-match "💼 \\([^|]+\\)" business-context)
+                                 (match-string 1 business-context)
+                               nil)))
+            (when domain-part
+              (insert (format " | %s" (string-trim domain-part))))))
+
+        ;; Add task description
+        (insert (format " | %s" truncated-task))
+
+        ;; Add duration
+        (insert (format " | %s" duration))
+
+        ;; Add context percentage if available
+        (when ctx-pct
+          (insert (format " | %.0f%% ctx" ctx-pct)))
+
+        ;; Add file count if available
+        (when file-count
+          (insert (format " | %d files" file-count)))
+
+        ;; Add org tags if enabled
+        (when tags
+          (insert (format " :%s:" (mapconcat #'identity tags ":"))))
+
         (insert "\n")
-        (insert (format "*** Status\n\n"))
-        (insert (format "<!-- status-marker-%s -->\n" (claude-agent-id agent)))
-        (insert "/Status file not found or empty/\n\n")))))
+
+        ;; STATUS drawer (collapsed by default) - contains all details
+        (insert "   :STATUS:\n")
+        (insert (format "   <!-- status-marker-%s -->\n" (claude-agent-id agent)))
+        (insert "   /Waiting for status update.../\n")
+        (insert "   :END:\n\n")))))
 
 ;;; Output appending
 
@@ -149,46 +210,90 @@ Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'
 
 ;;;###autoload
 (defun claude-multi--update-agent-status (agent)
-  "Update the status of AGENT in the progress buffer."
+  "Update the status of AGENT in the progress buffer with ultra-compact format."
   (when (buffer-live-p claude-multi--progress-buffer)
     (with-current-buffer claude-multi--progress-buffer
-      (let ((inhibit-read-only t))
+      (let* ((inhibit-read-only t)
+             (task-desc (claude-agent-task-description agent))
+             (truncated-task (if (> (length task-desc) 40)
+                                 (concat (substring task-desc 0 37) "...")
+                               task-desc))
+             (tags (when claude-multi-use-org-tags
+                     (claude-multi--agent-tags-from-status (claude-agent-status agent))))
+             (business-context (claude-multi--extract-business-context agent))
+             (agent-dir (or (claude-agent-worktree-path agent) default-directory))
+             (status-file (expand-file-name "status.json" agent-dir))
+             (ctx-pct nil)
+             (file-count nil)
+             (duration nil))
+
+        ;; Try to extract info from status.json if available
+        (when (file-exists-p status-file)
+          (condition-case nil
+              (let* ((json-object-type 'plist)
+                     (json-array-type 'list)
+                     (json-key-type 'keyword)
+                     (data (json-read-file status-file))
+                     (context (plist-get data :context_window))
+                     (git-info (plist-get data :git)))
+                (when context
+                  (setq ctx-pct (plist-get context :percentage_used)))
+                (when git-info
+                  (let ((changed-files (plist-get git-info :changed_files)))
+                    (when changed-files
+                      (setq file-count (length changed-files))))))
+            (error nil)))
+
+        ;; Calculate duration
+        (setq duration (claude-multi--format-duration (claude-agent-created-at agent)
+                                                      (claude-agent-completed-at agent)))
+
         (save-excursion
           (goto-char (point-min))
+          ;; Find the agent section by searching for the agent ID
           (when (re-search-forward
-                 (format "^\\*\\* .* %s$" (regexp-quote (claude-agent-name agent)))
+                 (format "^\\*\\* .* %s" (regexp-quote (claude-agent-id agent)))
                  nil t)
-            ;; Update the heading with current status icon
             (beginning-of-line)
+            ;; Update the entire headline with all compact info
             (kill-line)
-            (insert (format "** %s %s"
-                           (claude-multi--get-status-icon (claude-agent-status agent))
-                           (claude-agent-name agent)))
 
-            ;; Update properties drawer
-            (forward-line 1)
-            (when (looking-at ":PROPERTIES:")
-              (let ((props-start (point)))
-                (re-search-forward "^:END:" nil t)
-                (delete-region props-start (point))
-                (goto-char props-start)
-                (insert ":PROPERTIES:\n")
-                (insert (format ":ID: %s\n" (claude-agent-id agent)))
-                (insert (format ":STATUS: %s\n" (upcase (symbol-name (claude-agent-status agent)))))
-                (when (claude-agent-worktree-path agent)
-                  (insert (format ":WORKTREE: %s\n" (claude-agent-worktree-path agent))))
-                (insert (format ":CREATED: %s\n"
-                               (format-time-string "[%Y-%m-%d %a %H:%M:%S]"
-                                                 (claude-agent-created-at agent))))
-                (when (claude-agent-completed-at agent)
-                  (insert (format ":COMPLETED: %s\n"
-                                 (format-time-string "[%Y-%m-%d %a %H:%M:%S]"
-                                                   (claude-agent-completed-at agent))))
-                  (insert (format ":DURATION: %s\n"
-                                 (claude-multi--format-duration
-                                  (claude-agent-created-at agent)
-                                  (claude-agent-completed-at agent)))))
-                (insert ":END:")))))
+            ;; Ultra-compact headline format
+            (insert (format "** %s "
+                           (claude-multi--get-status-icon (claude-agent-status agent))))
+
+            ;; Insert agent ID with color matching kitty tab
+            (let ((agent-id-start (point)))
+              (insert (claude-agent-id agent))
+              (add-text-properties agent-id-start (point)
+                                   `(face (:foreground ,(claude-agent-color agent) :weight bold))))
+
+            ;; Add business domains if available
+            (when business-context
+              (let ((domain-part (if (string-match "💼 \\([^|]+\\)" business-context)
+                                     (match-string 1 business-context)
+                                   nil)))
+                (when domain-part
+                  (insert (format " | %s" (string-trim domain-part))))))
+
+            ;; Add task description
+            (insert (format " | %s" truncated-task))
+
+            ;; Add duration
+            (insert (format " | %s" duration))
+
+            ;; Add context percentage if available
+            (when ctx-pct
+              (insert (format " | %.0f%% ctx" ctx-pct)))
+
+            ;; Add file count if available
+            (when file-count
+              (insert (format " | %d files" file-count)))
+
+            ;; Add org tags if enabled
+            (when tags
+              (insert (format " :%s:" (mapconcat #'identity tags ":"))))))
+
         ;; Update session stats
         (claude-multi--update-session-stats)))))
 
@@ -254,6 +359,43 @@ Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'
     ('failed "🔴")
     ('pending "⚪")
     (_ "❓")))
+
+(defun claude-multi--agent-tags-from-status (status)
+  "Convert agent STATUS to org-mode tag strings.
+Returns a list of tag strings appropriate for the status."
+  (pcase status
+    ('running '("running"))
+    ('waiting-input '("waiting" "input"))
+    ('completed '("completed"))
+    ('failed '("failed"))
+    ('pending '("pending"))
+    (_ '())))
+
+(defun claude-multi--extract-business-context (agent)
+  "Extract business context from AGENT's status.json for display in headline.
+Returns a string like '💼 api | fixing issue' or nil if not available."
+  (let* ((agent-dir (or (claude-agent-worktree-path agent) default-directory))
+         (status-file (expand-file-name "status.json" agent-dir)))
+    (when (file-exists-p status-file)
+      (condition-case nil
+          (let* ((json-object-type 'plist)
+                 (json-array-type 'list)
+                 (json-key-type 'keyword)
+                 (data (json-read-file status-file))
+                 (business-ctx (plist-get data :business_context)))
+            (when business-ctx
+              (let ((domains (plist-get business-ctx :technical_domains))
+                    (objective (plist-get business-ctx :objective)))
+                (when (or domains objective)
+                  (concat "💼 "
+                         (when domains
+                           (mapconcat #'identity domains ", "))
+                         (when (and domains objective) " | ")
+                         (when objective
+                           (if (> (length objective) 40)
+                               (concat (substring objective 0 37) "...")
+                             objective)))))))
+        (error nil)))))
 
 (defun claude-multi--insert-agent-marker (agent)
   "Insert a marker at the end of AGENT's progress section.
