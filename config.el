@@ -168,60 +168,44 @@ Used for round-robin split placement or intelligent tab management.")
   (message "Claude Multi-Agent session started. Use SPC c m a to spawn agents."))
 
 ;;;###autoload
-(defun claude-multi/spawn-agent (task-description &optional directory branch)
-  "Spawn a new Claude agent with TASK-DESCRIPTION.
-Optional DIRECTORY specifies the working directory.
-Optional BRANCH specifies the git branch (creates a worktree if provided)."
-  (interactive "sTask description: ")
+(defun claude-multi/spawn-agent ()
+  "Spawn a new Claude agent in a kitty tab.
+Prompts for task description and working directory.
+Agent will cd into the directory before launching Claude."
+  (interactive)
   (unless claude-multi--session-start-time
     (claude-multi/start-session))
-  (let ((agent (claude-multi--create-agent task-description))
-        (default-directory (or directory default-directory)))
+  (let* ((task (read-string "Task description: "))
+         (directory (read-directory-name "Working directory: " default-directory nil t))
+         (agent (claude-multi--create-agent task)))
     ;; Set directory as worktree path (will be used as working directory)
-    (when directory
-      (setf (claude-agent-worktree-path agent) (expand-file-name directory)))
-    ;; Only set branch if provided (this triggers worktree creation)
+    (setf (claude-agent-worktree-path agent) (expand-file-name directory))
+    (push agent claude-multi--agents)
+    (claude-multi--launch-agent agent)
+    (message "Spawned agent: %s in %s" (claude-agent-name agent) directory)))
+
+;;;###autoload
+(defun claude-multi/spawn-agent-with-worktree ()
+  "Spawn agent with git worktree isolation in a kitty tab.
+Prompts for task description, directory, and branch name.
+Creates a new git worktree for isolated parallel development.
+Agent will cd into the worktree directory before launching Claude."
+  (interactive)
+  (unless claude-multi--session-start-time
+    (claude-multi/start-session))
+  (let* ((task (read-string "Task description: "))
+         (directory (read-directory-name "Worktree directory: " nil nil t))
+         (branch (read-string "Branch name: "))
+         (agent (claude-multi--create-agent task)))
+    ;; Set directory as worktree path
+    (setf (claude-agent-worktree-path agent) (expand-file-name directory))
+    ;; Set branch name to trigger worktree creation
     (when (and branch (not (string-empty-p branch)))
       (setf (claude-agent-branch-name agent) branch))
     (push agent claude-multi--agents)
     (claude-multi--launch-agent agent)
-    (message "Spawned agent: %s" (claude-agent-name agent))))
-
-;;;###autoload
-(defun claude-multi/spawn-agent-tab (task-description)
-  "Spawn a new Claude agent in a kitty TAB with TASK-DESCRIPTION."
-  (interactive "sTask description: ")
-  (unless claude-multi--session-start-time
-    (claude-multi/start-session))
-  (let ((claude-multi-kitty-window-type 'tab)
-        (agent (claude-multi--create-agent task-description)))
-    (push agent claude-multi--agents)
-    (claude-multi--launch-agent agent)
-    (message "Spawned agent in tab: %s" (claude-agent-name agent))))
-
-;;;###autoload
-(defun claude-multi/spawn-agent-split (task-description)
-  "Spawn a new Claude agent in a kitty SPLIT WINDOW with TASK-DESCRIPTION."
-  (interactive "sTask description: ")
-  (unless claude-multi--session-start-time
-    (claude-multi/start-session))
-  (let ((claude-multi-kitty-window-type 'window)
-        (agent (claude-multi--create-agent task-description)))
-    (push agent claude-multi--agents)
-    (claude-multi--launch-agent agent)
-    (message "Spawned agent in split: %s" (claude-agent-name agent))))
-
-;;;###autoload
-(defun claude-multi/spawn-agent-with-worktree ()
-  "Spawn agent with custom directory and branch for worktree."
-  (interactive)
-  (let* ((task (read-string "Task description: "))
-         (directory (read-directory-name "Directory (for worktree): " nil nil t))
-         (branch (read-string "Branch name (optional): ")))
-    (claude-multi/spawn-agent
-     task
-     directory
-     (if (string-empty-p branch) nil branch))))
+    (message "Spawned agent: %s in worktree %s (branch: %s)"
+             (claude-agent-name agent) directory branch)))
 
 ;;;###autoload
 (defun claude-multi/open-progress ()
@@ -342,16 +326,14 @@ Optional BRANCH specifies the git branch (creates a worktree if provided)."
       :prefix ("c m" . "claude-multi")
       :desc "Start session"           "s" #'claude-multi/start-session
       :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
-      :desc "Spawn agent in tab"      "t" #'claude-multi/spawn-agent-tab
-      :desc "Spawn agent in split"    "w" #'claude-multi/spawn-agent-split
-      :desc "Spawn with worktree"     "W" #'claude-multi/spawn-agent-with-worktree
+      :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
       :desc "Open progress"           "p" #'claude-multi/open-progress
       :desc "Dashboard"               "d" #'claude-multi/dashboard
       :desc "Focus agent"             "f" #'claude-multi/focus-agent
       :desc "Kill agent"              "k" #'claude-multi/kill-agent
       :desc "Kill all"                "K" #'claude-multi/kill-all-agents
       :desc "Export progress"         "e" #'claude-multi/export-progress
-      :desc "List worktrees"          "T" #'claude-multi/list-worktrees
+      :desc "List worktrees"          "l" #'claude-multi/list-worktrees
       :desc "Cleanup worktrees"       "c" #'claude-multi/cleanup-orphaned-worktrees)
 
 (provide 'claude-multi-config)
