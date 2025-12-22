@@ -8,6 +8,15 @@
 
 (require 'cl-lib)
 
+;; Forward declarations for variables defined in config.el
+(defvar claude-multi--agent-id-counter)
+(defvar claude-multi-agent-colors)
+(defvar claude-multi-agent-color-schemes)
+(defvar claude-multi-kitty-listen-address)
+(defvar claude-multi--current-session-window-id)
+(defvar claude-multi-agent-spawn-type)
+(defvar claude-multi-claude-command)
+
 ;;; Agent structure
 
 (cl-defstruct claude-agent
@@ -45,7 +54,7 @@ Does not launch the agent process yet."
      :status 'pending
      :created-at (current-time))))
 
-(defun claude-multi--assign-color (id)
+(defun claude-multi--assign-color (_id)
   "Assign a color to an agent based on its ID."
   (let ((colors claude-multi-agent-colors)
         (index (mod claude-multi--agent-id-counter (length claude-multi-agent-colors))))

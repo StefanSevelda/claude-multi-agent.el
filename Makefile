@@ -114,9 +114,14 @@ uninstall:
 	fi
 	@echo "Don't forget to remove 'claude-multi' from your init.el and run 'doom sync'"
 
-check-syntax:
+check-syntax: $(DASH_DIR) $(S_DIR) $(F_DIR)
 	@echo "Checking Emacs Lisp syntax..."
-	@$(BATCH) \
+	@$(EMACS) -batch -Q \
+		-L . \
+		-L autoload \
+		-L $(DASH_DIR) \
+		-L $(S_DIR) \
+		-L $(F_DIR) \
 		--eval "(setq byte-compile-error-on-warn t)" \
 		-f batch-byte-compile $(EL_FILES)
 

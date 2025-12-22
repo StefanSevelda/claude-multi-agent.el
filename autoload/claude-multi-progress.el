@@ -10,6 +10,13 @@
 (require 'f)
 (require 'org)
 
+;; Forward declarations for variables defined in config.el
+(defvar claude-multi--progress-buffer)
+(defvar claude-multi--session-start-time)
+(defvar claude-multi--current-session-window-id)
+(defvar claude-multi-use-org-tags)
+(defvar claude-multi-output-throttle-delay)
+
 ;;; Throttling variables
 
 (defvar claude-multi--last-update-time nil
@@ -72,9 +79,9 @@
         ;; Try to extract info from status.json if available
         (when (file-exists-p status-file)
           (condition-case nil
-              (let* ((json-object-type 'plist)
-                     (json-array-type 'list)
-                     (json-key-type 'keyword)
+              (let* ((_json-object-type 'plist)
+                     (_json-array-type 'list)
+                     (_json-key-type 'keyword)
                      (data (json-read-file status-file))
                      (context (plist-get data :context_window))
                      (git-info (plist-get data :git)))
@@ -155,7 +162,8 @@
 ;;;###autoload
 (defun claude-multi--append-agent-output (agent output)
   "Append OUTPUT from AGENT to its section in the progress buffer.
-Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'."
+Uses throttling to reduce flashing based on
+`claude-multi-output-throttle-delay'."
   (unless claude-multi--last-update-time
     (setq claude-multi--last-update-time (make-hash-table :test 'equal)))
   (unless claude-multi--pending-updates
@@ -246,9 +254,9 @@ Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'
         ;; Try to extract info from status.json if available
         (when (file-exists-p status-file)
           (condition-case nil
-              (let* ((json-object-type 'plist)
-                     (json-array-type 'list)
-                     (json-key-type 'keyword)
+              (let* ((_json-object-type 'plist)
+                     (_json-array-type 'list)
+                     (_json-key-type 'keyword)
                      (data (json-read-file status-file))
                      (context (plist-get data :context_window))
                      (git-info (plist-get data :git)))

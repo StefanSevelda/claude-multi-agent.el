@@ -28,15 +28,15 @@
 
 (defcustom claude-multi-worktree-location 'adjacent
   "Where to create worktrees for agents.
-'adjacent - Create in ../claude-worktrees/
-'internal - Create in .git/worktrees/"
+\\='adjacent - Create in ../claude-worktrees/
+\\='internal - Create in .git/worktrees/"
   :type '(choice (const :tag "Adjacent directory" adjacent)
                  (const :tag "Internal .git/worktrees" internal))
   :group 'claude-multi)
 
 (defcustom claude-multi-claude-command "claude"
   "Command to run Claude Code CLI.
-This can be customized to use different binary names (e.g., 'claude26')."
+This can be customized to use different binary names (e.g., \\='claude26\\=')."
   :type 'string
   :group 'claude-multi)
 
@@ -68,8 +68,8 @@ Format: unix:/tmp/kitty-claude or tcp:localhost:5555"
 
 (defcustom claude-multi-output-throttle-delay 0.5
   "Delay in seconds between progress buffer updates to reduce flashing.
-Setting this higher (e.g., 1.0) will reduce flashing but make updates less responsive.
-Setting to 0 disables throttling."
+Setting this higher (e.g., 1.0) will reduce flashing but make updates
+less responsive.  Setting to 0 disables throttling."
   :type 'number
   :group 'claude-multi)
 

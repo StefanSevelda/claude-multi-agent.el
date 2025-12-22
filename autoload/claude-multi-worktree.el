@@ -10,6 +10,15 @@
 (require 'f)
 (require 's)
 
+;; Forward declarations
+(declare-function magit-status "magit" (&optional directory cache))
+(declare-function claude-multi--select-agent "config")
+
+;; Forward declarations for variables defined in config.el
+(defvar claude-multi-claude-command)
+(defvar claude-multi-worktree-location)
+(defvar claude-multi--agents)
+
 ;;; Worktree detection
 
 ;;;###autoload
@@ -55,7 +64,7 @@
 ;;; Worktree creation
 
 ;;;###autoload
-(defun claude-multi--build-worktree-command (agent repo-root worktree-path branch-name)
+(defun claude-multi--build-worktree-command (_agent repo-root worktree-path branch-name)
   "Build shell command to create worktree for AGENT in kitty terminal.
 REPO-ROOT is the git repository root directory.
 WORKTREE-PATH is the target path for the worktree.
@@ -148,8 +157,9 @@ REPO-ROOT is the git repository root.
 REPO-NAME is the name of the repository.
 BRANCH-NAME is the branch name for the worktree.
 
-When using 'adjacent mode, this mimics gwt behavior:
-worktrees are created as siblings to the main repo at ../<repo-name>-<branch-name>"
+When using \\='adjacent mode, this mimics gwt behavior:
+worktrees are created as siblings to the main repo at
+../<repo-name>-<branch-name>"
   (pcase claude-multi-worktree-location
     ('adjacent
      ;; Create worktrees as siblings to repo (same as gwt does)

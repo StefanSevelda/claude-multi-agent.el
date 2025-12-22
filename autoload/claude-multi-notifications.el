@@ -9,6 +9,16 @@
 
 (require 'alert nil t)
 
+;; Forward declarations
+(declare-function claude-agent-last-output "claude-multi-agents")
+(declare-function claude-multi--get-status-icon "claude-multi-progress")
+(declare-function claude-multi/send-input "config")
+
+;; Forward declarations for variables defined in config.el
+(defvar claude-multi-notification-methods)
+(defvar claude-multi--progress-buffer)
+(defvar claude-multi--agents)
+
 ;;; Notification state
 
 (defvar claude-multi--waiting-agents nil
