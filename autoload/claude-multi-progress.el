@@ -466,6 +466,9 @@ Returns the position or nil if not found."
 (defvar claude-multi--status-file-watches nil
   "Hash table mapping agent IDs to file watch descriptors.")
 
+(defvar claude-multi--status-watch-upgraded nil
+  "Hash table tracking which watches have been upgraded from directory to file.")
+
 (defvar claude-multi--status-update-in-progress nil
   "Guard to prevent recursive status updates.")
 
@@ -694,17 +697,18 @@ Watches the agent's directory initially, then switches to watching
 the status.json file once it's created."
   (unless claude-multi--status-file-watches
     (setq claude-multi--status-file-watches (make-hash-table :test 'equal)))
+  (unless claude-multi--status-watch-upgraded
+    (setq claude-multi--status-watch-upgraded (make-hash-table :test 'equal)))
 
   (let* ((agent-id (claude-agent-id agent))
          (agent-dir (or (claude-agent-worktree-path agent)
                        (claude-agent-working-directory agent)
                        default-directory))
-         (status-file (expand-file-name "status.json" agent-dir))
-         (watching-file nil))
+         (status-file (expand-file-name "status.json" agent-dir)))
     ;; If status.json already exists, watch it directly
     (if (file-exists-p status-file)
         (progn
-          (setq watching-file t)
+          (puthash agent-id t claude-multi--status-watch-upgraded)
           (puthash agent-id
                    (file-notify-add-watch
                     status-file
@@ -722,11 +726,11 @@ the status.json file once it's created."
                 (lambda (event)
                   ;; Only process events related to status.json
                   (when (and (string-match-p "status\\.json" (format "%s" event))
-                            (not watching-file))
+                            (not (gethash agent-id claude-multi--status-watch-upgraded)))
                     (if (file-exists-p status-file)
                         (progn
                           ;; Upgrade to watching the file directly
-                          (setq watching-file t)
+                          (puthash agent-id t claude-multi--status-watch-upgraded)
                           (let ((old-watch (gethash agent-id claude-multi--status-file-watches)))
                             (when old-watch
                               (file-notify-rm-watch old-watch))
@@ -752,7 +756,9 @@ the status.json file once it's created."
            (watch-desc (gethash agent-id claude-multi--status-file-watches)))
       (when watch-desc
         (file-notify-rm-watch watch-desc)
-        (remhash agent-id claude-multi--status-file-watches)))))
+        (remhash agent-id claude-multi--status-file-watches)
+        (when claude-multi--status-watch-upgraded
+          (remhash agent-id claude-multi--status-watch-upgraded))))))
 
 ;;;###autoload
 (defun claude-multi--stop-all-status-watches ()
@@ -761,7 +767,9 @@ the status.json file once it's created."
     (maphash (lambda (agent-id watch-desc)
               (file-notify-rm-watch watch-desc))
             claude-multi--status-file-watches)
-    (clrhash claude-multi--status-file-watches)))
+    (clrhash claude-multi--status-file-watches))
+  (when claude-multi--status-watch-upgraded
+    (clrhash claude-multi--status-watch-upgraded)))
 
 (provide 'claude-multi-progress)
 ;;; progress.el ends here
