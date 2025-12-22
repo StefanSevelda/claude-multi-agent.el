@@ -12,25 +12,13 @@
 (eval-and-compile
   (require 'subr-x))  ; For string-empty-p, string-trim
 
-;; Add autoload directory to load path and load modules
-(let ((autoload-dir (expand-file-name "autoload"
-                                      (or (and load-file-name
-                                               (file-name-directory load-file-name))
-                                          (and (boundp 'byte-compile-current-file)
-                                               byte-compile-current-file
-                                               (file-name-directory byte-compile-current-file))
-                                          default-directory))))
-  (add-to-list 'load-path autoload-dir)
-  (require 'claude-multi-agents)
-  (require 'claude-multi-progress)
-  (require 'claude-multi-worktree)
-  (require 'claude-multi-notifications))
-
+;;; Define defgroup and all variables BEFORE loading modules
 (defgroup claude-multi nil
   "Manage multiple Claude Code agents in parallel."
   :group 'tools
   :prefix "claude-multi-")
 
+;;; Customization variables
 (defcustom claude-multi-worktree-location 'adjacent
   "Where to create worktrees for agents.
 \\='adjacent - Create in ../claude-worktrees/
@@ -130,6 +118,12 @@ Available methods: popup, markdown, modeline, sound"
   :type 'string
   :group 'claude-multi)
 
+(defcustom claude-multi-use-org-tags t
+  "Whether to use org-mode tags in agent headlines.
+When enabled, agent status will be shown as org-mode tags (e.g., :running:, :completed:)."
+  :type 'boolean
+  :group 'claude-multi)
+
 ;; Forward declarations for functions in other modules
 (declare-function claude-multi--stop-all-status-watches "claude-multi-progress")
 (declare-function claude-multi--setup-notifications "claude-multi-notifications")
@@ -174,6 +168,20 @@ Set when the first agent is spawned, used to target subsequent agents.")
 (defvar claude-multi--current-session-tab-ids nil
   "List of kitty tab IDs for tabs created in the current session.
 Used for round-robin split placement or intelligent tab management.")
+
+;;; Load autoload modules NOW that all variables are defined
+(let ((autoload-dir (expand-file-name "autoload"
+                                      (or (and load-file-name
+                                               (file-name-directory load-file-name))
+                                          (and (boundp 'byte-compile-current-file)
+                                               byte-compile-current-file
+                                               (file-name-directory byte-compile-current-file))
+                                          default-directory))))
+  (add-to-list 'load-path autoload-dir)
+  (require 'claude-multi-agents)
+  (require 'claude-multi-progress)
+  (require 'claude-multi-worktree)
+  (require 'claude-multi-notifications))
 
 ;; Interactive commands
 
