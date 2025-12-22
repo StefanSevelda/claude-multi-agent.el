@@ -97,7 +97,7 @@ Returns a plist with :name, :color, :text, :bg properties."
                               ((claude-agent-worktree-path agent)
                                (claude-agent-worktree-path agent))
                               (t (or (claude-agent-working-directory agent)
-                                     default-directory)))))
+                                     default-directory))))
                ;; Check if session window still exists (might have been closed manually)
                (session-window-exists
                 (and claude-multi--current-session-window-id
