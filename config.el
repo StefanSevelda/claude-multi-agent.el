@@ -7,6 +7,8 @@
 
 ;;; Code:
 
+(require 'subr-x)  ; For string-empty-p, string-trim
+
 ;; Add autoload directory to load path and load modules
 (let ((autoload-dir (expand-file-name "autoload"
                                       (or (and load-file-name

@@ -7,6 +7,7 @@
 ;;; Code:
 
 (require 'cl-lib)
+(require 'subr-x)  ; For string-trim
 
 ;; Forward declarations for functions in other modules
 (declare-function claude-multi--stop-watching-agent-status "claude-multi-progress")
