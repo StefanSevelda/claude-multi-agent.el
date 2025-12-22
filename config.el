@@ -255,45 +255,68 @@ Agent will cd into the worktree directory before launching Claude."
       (goto-char (point-min)))
     (display-buffer buf)))
 
-;;;###autoload
-(defun claude-multi/toggle-all-status-drawers ()
-  "Toggle visibility of all agent STATUS drawers in the progress buffer."
-  (interactive)
+;;; Drawer visibility core logic (testable, no org-mode dependencies)
+
+(defun claude-multi--find-agent-headlines ()
+  "Find all agent headline positions in the progress buffer.
+Returns a list of buffer positions where agent headlines start."
   (when (and claude-multi--progress-buffer
              (buffer-live-p claude-multi--progress-buffer))
     (with-current-buffer claude-multi--progress-buffer
       (save-excursion
-        (goto-char (point-min))
-        ;; Find all agent headlines (they start with **)
-        (while (re-search-forward "^\\*\\* " nil t)
-          (beginning-of-line)
-          (org-cycle))))))
+        (let ((positions nil))
+          (goto-char (point-min))
+          (while (re-search-forward "^\\*\\* " nil t)
+            (push (line-beginning-position) positions))
+          (nreverse positions))))))
+
+(defun claude-multi--apply-to-headlines (action-fn)
+  "Apply ACTION-FN to each agent headline in the progress buffer.
+ACTION-FN is called with point at the beginning of each headline."
+  (when (and claude-multi--progress-buffer
+             (buffer-live-p claude-multi--progress-buffer))
+    (with-current-buffer claude-multi--progress-buffer
+      (save-excursion
+        (dolist (pos (claude-multi--find-agent-headlines))
+          (goto-char pos)
+          (funcall action-fn))))))
+
+;;; Display functions (org-mode specific, thin wrappers)
+
+(defun claude-multi--org-show-subtree-at-point ()
+  "Show org subtree at point. Wrapper for org-mode function."
+  (when (fboundp 'org-show-subtree)
+    (org-show-subtree)))
+
+(defun claude-multi--org-hide-drawer-at-point ()
+  "Hide org drawer at point. Wrapper for org-mode function."
+  (when (fboundp 'org-hide-drawer-all)
+    (org-hide-drawer-all)))
+
+(defun claude-multi--org-cycle-at-point ()
+  "Cycle org visibility at point. Wrapper for org-mode function."
+  (when (fboundp 'org-cycle)
+    (org-cycle)))
+
+;;; User commands
+
+;;;###autoload
+(defun claude-multi/toggle-all-status-drawers ()
+  "Toggle visibility of all agent STATUS drawers in the progress buffer."
+  (interactive)
+  (claude-multi--apply-to-headlines #'claude-multi--org-cycle-at-point))
 
 ;;;###autoload
 (defun claude-multi/show-all-status-drawers ()
   "Show all agent STATUS drawers in the progress buffer."
   (interactive)
-  (when (and claude-multi--progress-buffer
-             (buffer-live-p claude-multi--progress-buffer))
-    (with-current-buffer claude-multi--progress-buffer
-      (save-excursion
-        (goto-char (point-min))
-        (while (re-search-forward "^\\*\\* " nil t)
-          (beginning-of-line)
-          (org-show-subtree))))))
+  (claude-multi--apply-to-headlines #'claude-multi--org-show-subtree-at-point))
 
 ;;;###autoload
 (defun claude-multi/hide-all-status-drawers ()
   "Hide all agent STATUS drawers in the progress buffer."
   (interactive)
-  (when (and claude-multi--progress-buffer
-             (buffer-live-p claude-multi--progress-buffer))
-    (with-current-buffer claude-multi--progress-buffer
-      (save-excursion
-        (goto-char (point-min))
-        (while (re-search-forward "^\\*\\* " nil t)
-          (beginning-of-line)
-          (org-hide-drawer-all))))))
+  (claude-multi--apply-to-headlines #'claude-multi--org-hide-drawer-at-point))
 
 ;; Note: claude-multi/send-input removed - user types directly in kitty terminal
 

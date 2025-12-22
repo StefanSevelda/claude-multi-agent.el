@@ -141,7 +141,14 @@
         ;; Show the STATUS drawer by default (org-mode collapses drawers by default)
         (save-excursion
           (forward-line -5)  ; Go back to the ** headline
-          (org-show-subtree))))))
+          (claude-multi--show-subtree-safe))))))
+
+(defun claude-multi--show-subtree-safe ()
+  "Safely show org subtree, with fallback if org-mode not available."
+  (when (fboundp 'org-show-subtree)
+    (condition-case nil
+        (org-show-subtree)
+      (error nil))))
 
 ;;; Output appending
 
@@ -706,7 +713,7 @@ The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
             (when (and headline-pos content (string-match-p "WAITING FOR INPUT" content))
               (save-excursion
                 (goto-char headline-pos)
-                (org-show-subtree)))))
+                (claude-multi--show-subtree-safe)))))
       (setq claude-multi--status-update-in-progress nil))))
 
 ;;;###autoload
