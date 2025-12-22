@@ -2,7 +2,7 @@ name: Tests
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [ main, develop, improve-session ]
   pull_request:
     branches: [ main, develop ]
 
@@ -21,21 +21,19 @@ jobs:
         with:
           version: ${{ matrix.emacs-version }}
 
-      - name: Install dependencies
+      - name: Install test dependencies
         run: |
           emacs --version
-          # Install package dependencies (this would typically be done via doom sync)
-          # For CI, we'll verify syntax only
+          make install-test-deps
+
+      - name: Run tests
+        run: make test
 
       - name: Check syntax
         run: make check-syntax
 
       - name: Byte-compile
         run: make compile
-
-      # TODO: Enable when tests are implemented
-      # - name: Run tests
-      #   run: make test
 
   lint:
     runs-on: ubuntu-latest
