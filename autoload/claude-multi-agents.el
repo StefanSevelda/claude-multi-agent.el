@@ -21,6 +21,7 @@
   status-timer          ; Timer for polling kitty status
   worktree-path         ; Git worktree path (string or nil)
   branch-name           ; Git branch name for worktree (string or nil)
+  working-directory     ; Working directory where agent was launched (string)
   status                ; Agent status symbol: running, waiting-input, completed, failed
   task-description      ; Original task description (string)
   created-at            ; Timestamp when created
@@ -40,6 +41,7 @@ Does not launch the agent process yet."
      :name name
      :color color
      :task-description task-description
+     :working-directory default-directory
      :status 'pending
      :created-at (current-time))))
 

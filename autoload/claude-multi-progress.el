@@ -61,7 +61,9 @@
              (tags (when claude-multi-use-org-tags
                      (claude-multi--agent-tags-from-status (claude-agent-status agent))))
              (business-context (claude-multi--extract-business-context agent))
-             (agent-dir (or (claude-agent-worktree-path agent) default-directory))
+             (agent-dir (or (claude-agent-worktree-path agent)
+                           (claude-agent-working-directory agent)
+                           default-directory))
              (status-file (expand-file-name "status.json" agent-dir))
              (ctx-pct nil)
              (file-count nil)
@@ -221,7 +223,9 @@ Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'
              (tags (when claude-multi-use-org-tags
                      (claude-multi--agent-tags-from-status (claude-agent-status agent))))
              (business-context (claude-multi--extract-business-context agent))
-             (agent-dir (or (claude-agent-worktree-path agent) default-directory))
+             (agent-dir (or (claude-agent-worktree-path agent)
+                           (claude-agent-working-directory agent)
+                           default-directory))
              (status-file (expand-file-name "status.json" agent-dir))
              (ctx-pct nil)
              (file-count nil)
@@ -374,7 +378,9 @@ Returns a list of tag strings appropriate for the status."
 (defun claude-multi--extract-business-context (agent)
   "Extract business context from AGENT's status.json for display in headline.
 Returns a string like '💼 api | fixing issue' or nil if not available."
-  (let* ((agent-dir (or (claude-agent-worktree-path agent) default-directory))
+  (let* ((agent-dir (or (claude-agent-worktree-path agent)
+                       (claude-agent-working-directory agent)
+                       default-directory))
          (status-file (expand-file-name "status.json" agent-dir)))
     (when (file-exists-p status-file)
       (condition-case nil
@@ -654,7 +660,9 @@ The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
     (unwind-protect
         (with-current-buffer claude-multi--progress-buffer
           (let* ((inhibit-read-only t)
-                 (agent-dir (or (claude-agent-worktree-path agent) default-directory))
+                 (agent-dir (or (claude-agent-worktree-path agent)
+                               (claude-agent-working-directory agent)
+                               default-directory))
                  (status-file (expand-file-name "status.json" agent-dir))
                  (content (claude-multi--parse-status-json status-file)))
             ;; Find the agent's status marker inside the STATUS drawer
@@ -688,7 +696,9 @@ the status.json file once it's created."
     (setq claude-multi--status-file-watches (make-hash-table :test 'equal)))
 
   (let* ((agent-id (claude-agent-id agent))
-         (agent-dir (or (claude-agent-worktree-path agent) default-directory))
+         (agent-dir (or (claude-agent-worktree-path agent)
+                       (claude-agent-working-directory agent)
+                       default-directory))
          (status-file (expand-file-name "status.json" agent-dir))
          (watching-file nil))
     ;; If status.json already exists, watch it directly
