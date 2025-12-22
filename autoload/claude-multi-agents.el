@@ -88,10 +88,16 @@ Returns a plist with :name, :color, :text, :bg properties."
 
         (let* ((use-worktree-p (and (claude-multi--in-git-repo-p)
                                    (claude-agent-branch-name agent)))
-               ;; If using worktree, start in repo root; otherwise use current directory
-               (starting-dir (if use-worktree-p
-                                (claude-multi--get-git-root)
-                              default-directory))
+               ;; Determine starting directory:
+               ;; 1. If using worktree: repo root (will cd to worktree later)
+               ;; 2. If worktree-path is set but no branch: use that directory directly
+               ;; 3. Otherwise: use agent's working-directory
+               (starting-dir (cond
+                              (use-worktree-p (claude-multi--get-git-root))
+                              ((claude-agent-worktree-path agent)
+                               (claude-agent-worktree-path agent))
+                              (t (or (claude-agent-working-directory agent)
+                                     default-directory)))))
                ;; Check if session window still exists (might have been closed manually)
                (session-window-exists
                 (and claude-multi--current-session-window-id
