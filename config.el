@@ -50,9 +50,9 @@ Format: unix:/tmp/kitty-claude or tcp:localhost:5555"
 
 (defcustom claude-multi-kitty-window-type 'os-window
   "How to create kitty windows for agents.
-'os-window - New OS window (separate kitty instance)
-'tab - New tab in active kitty window
-'window - New kitty split in active tab"
+\\='os-window - New OS window (separate kitty instance)
+\\='tab - New tab in active kitty window
+\\='window - New kitty split in active tab"
   :type '(choice (const :tag "OS Window" os-window)
                  (const :tag "Tab" tab)
                  (const :tag "Split Window" window))
@@ -60,8 +60,8 @@ Format: unix:/tmp/kitty-claude or tcp:localhost:5555"
 
 (defcustom claude-multi-agent-spawn-type 'tab
   "How to spawn agents within the session OS window.
-'tab - Each agent gets its own tab (default)
-'split - Agents are split within tabs"
+\\='tab - Each agent gets its own tab (default)
+\\='split - Agents are split within tabs"
   :type '(choice (const :tag "New tab for each agent" tab)
                  (const :tag "Split window for each agent" split))
   :group 'claude-multi)
@@ -84,9 +84,9 @@ Available methods: popup, markdown, modeline, sound"
 
 (defcustom claude-multi-buffer-cleanup 'auto-close-success
   "How to handle kitty windows when agents complete.
-'keep-all - Keep all windows open (user closes manually)
-'auto-close-success - Auto-cleanup worktrees for successful agents
-'ask - Ask before closing kitty windows"
+\\='keep-all - Keep all windows open (user closes manually)
+\\='auto-close-success - Auto-cleanup worktrees for successful agents
+\\='ask - Ask before closing kitty windows"
   :type '(choice (const :tag "Keep all windows" keep-all)
                  (const :tag "Auto-cleanup worktrees" auto-close-success)
                  (const :tag "Ask before closing" ask))
@@ -108,7 +108,8 @@ Available methods: popup, markdown, modeline, sound"
 - :color - Main accent color (cursor, tab, selection, border)
 - :text - Terminal text color
 - :bg - Terminal background color"
-  :type 'list
+  :type '(repeat (list integer
+                       (plist :key-type symbol :value-type string)))
   :group 'claude-multi)
 
 ;; Legacy compatibility - extract just colors for simple access
@@ -123,6 +124,30 @@ Available methods: popup, markdown, modeline, sound"
   "Name of the central progress tracking buffer (org-mode)."
   :type 'string
   :group 'claude-multi)
+
+;; Forward declarations for functions in other modules
+(declare-function claude-multi--stop-all-status-watches "claude-multi-progress")
+(declare-function claude-multi--setup-notifications "claude-multi-notifications")
+(declare-function claude-multi--teardown-notifications "claude-multi-notifications")
+(declare-function claude-multi--kill-agent "claude-multi-agents")
+(declare-function claude-multi--format-duration "claude-multi-agents")
+(declare-function claude-multi--get-status-icon "claude-multi-progress")
+(declare-function claude-agent-kitty-window-id "claude-multi-agents")
+(declare-function claude-agent-name "claude-multi-agents")
+(declare-function claude-agent-status "claude-multi-agents")
+(declare-function claude-multi--select-agent "claude-multi-agents")
+(declare-function claude-multi--create-agent "claude-multi-agents")
+(declare-function claude-multi--launch-agent "claude-multi-agents")
+(declare-function claude-agent-worktree-path "claude-multi-agents")
+(declare-function claude-agent-branch-name "claude-multi-agents")
+(declare-function claude-agent-created-at "claude-multi-agents")
+(declare-function claude-agent-completed-at "claude-multi-agents")
+(declare-function claude-agent-id "claude-multi-agents")
+(declare-function claude-multi--init-progress-buffer "claude-multi-progress")
+
+;; cl-lib setf accessors for struct
+(gv-define-setter claude-agent-worktree-path (val agent) `(aset ,agent 7 ,val))
+(gv-define-setter claude-agent-branch-name (val agent) `(aset ,agent 8 ,val))
 
 ;; Global variables
 (defvar claude-multi--agents nil
@@ -377,29 +402,22 @@ ACTION-FN is called with point at the beginning of each headline."
 
 ;; Progress buffer mode
 
+(defvar auto-revert-interval)  ; Defined in autorevert.el
+(declare-function org-indent-mode "org-indent")  ; Defined in org-indent.el
+
 (define-derived-mode claude-multi-progress-mode org-mode "Claude-Multi-Progress"
   "Major mode for Claude Multi-Agent progress tracking in org-mode format."
   (setq-local auto-revert-interval 0.5)
   (auto-revert-mode 1)
   (read-only-mode 1)
   ;; Enable org-mode features
-  (org-indent-mode 1)
+  (when (fboundp 'org-indent-mode)
+    (org-indent-mode 1))
   (visual-line-mode 1))
 
 ;; Keybindings
-
-(map! :leader
-      :prefix ("c m" . "claude-multi")
-      :desc "Start session"           "s" #'claude-multi/start-session
-      :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
-      :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
-      :desc "Open progress"           "p" #'claude-multi/open-progress
-      :desc "Dashboard"               "d" #'claude-multi/dashboard
-      :desc "Focus agent"             "f" #'claude-multi/focus-agent
-      :desc "Kill agent"              "k" #'claude-multi/kill-agent
-      :desc "Kill all"                "K" #'claude-multi/kill-all-agents
-      :desc "Export progress"         "e" #'claude-multi/export-progress
-      :desc "List worktrees"          "l" #'claude-multi/list-worktrees)
+;; Note: Keybindings using map! macro should be set up in packages.el
+;; to avoid byte-compilation issues with Doom Emacs-specific macros
 
 (provide 'claude-multi-config)
 ;;; config.el ends here

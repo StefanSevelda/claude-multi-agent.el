@@ -8,14 +8,28 @@
 
 (require 'cl-lib)
 
+;; Forward declarations for functions in other modules
+(declare-function claude-multi--stop-watching-agent-status "claude-multi-progress")
+(declare-function claude-multi--update-agent-status "claude-multi-progress")
+(declare-function claude-multi--add-agent-section "claude-multi-progress")
+(declare-function claude-multi--update-session-stats "claude-multi-progress")
+(declare-function claude-multi--watch-agent-status-file "claude-multi-progress")
+(declare-function claude-multi--build-worktree-command "claude-multi-worktree")
+(declare-function claude-multi--in-git-repo-p "claude-multi-worktree")
+(declare-function claude-multi--get-git-root "claude-multi-worktree")
+(declare-function claude-multi--determine-worktree-path "claude-multi-worktree")
+
 ;; Forward declarations for variables defined in config.el
 (defvar claude-multi--agent-id-counter)
 (defvar claude-multi-agent-colors)
 (defvar claude-multi-agent-color-schemes)
 (defvar claude-multi-kitty-listen-address)
 (defvar claude-multi--current-session-window-id)
+(defvar claude-multi--current-session-tab-ids)
 (defvar claude-multi-agent-spawn-type)
 (defvar claude-multi-claude-command)
+(defvar claude-multi-buffer-cleanup)
+(defvar claude-multi--agents)
 
 ;;; Agent structure
 
@@ -276,15 +290,18 @@ Returns a plist with :name, :color, :text, :bg properties."
 
 (defun claude-multi--handle-buffer-cleanup (agent)
   "Handle cleanup of AGENT's kitty window based on configuration."
-  (pcase claude-multi-buffer-cleanup
-    ('keep-all nil)  ; User manually closes kitty windows
-    ('auto-close-success
-     (when (eq (claude-agent-status agent) 'completed)
+  (let ((status (claude-agent-status agent)))
+    (pcase claude-multi-buffer-cleanup
+      ('keep-all
+       ;; User manually closes kitty windows - do nothing
+       nil)
+      ('auto-close-success
        ;; Leave kitty window for user to review
-       nil))
-    ('ask
-     (when (y-or-n-p (format "Close kitty window for %s? " (claude-agent-name agent)))
-       (claude-multi--kill-agent agent)))))
+       (when (eq status 'completed)
+         nil))
+      ('ask
+       (when (y-or-n-p (format "Close kitty window for %s? " (claude-agent-name agent)))
+         (claude-multi--kill-agent agent))))))
 
 ;;; Agent interaction
 
@@ -379,10 +396,10 @@ Returns a human-readable string with visual warnings for long-running agents."
   (let* ((end (or end-time (current-time)))
          (duration (time-subtract end start-time))
          (seconds (floor (time-to-seconds duration)))
-         (minutes (/ seconds 60))
+         (_minutes (/ seconds 60))
          (hours (/ seconds 3600))
-         (days (/ seconds 86400))
-         (weeks (/ seconds 604800)))
+         (_days (/ seconds 86400))
+         (_weeks (/ seconds 604800)))
     (cond
      ;; Less than 1 minute
      ((< seconds 60)

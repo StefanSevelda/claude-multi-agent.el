@@ -10,12 +10,30 @@
 (require 'f)
 (require 'org)
 
+;; Forward declarations for filenotify functions
+(declare-function file-notify-add-watch "filenotify")
+(declare-function file-notify-rm-watch "filenotify")
+
+;; Forward declarations for functions in other modules
+(declare-function claude-multi--get-agent-by-id "claude-multi-agents")
+(declare-function claude-multi--detect-input-request "claude-multi-notifications")
+(declare-function claude-multi--format-duration "claude-multi-agents")
+(declare-function claude-agent-id "claude-multi-agents")
+(declare-function claude-agent-status "claude-multi-agents")
+(declare-function claude-agent-color "claude-multi-agents")
+(declare-function claude-agent-task-description "claude-multi-agents")
+(declare-function claude-agent-worktree-path "claude-multi-agents")
+(declare-function claude-agent-working-directory "claude-multi-agents")
+(declare-function claude-agent-created-at "claude-multi-agents")
+(declare-function claude-agent-completed-at "claude-multi-agents")
+
 ;; Forward declarations for variables defined in config.el
 (defvar claude-multi--progress-buffer)
 (defvar claude-multi--session-start-time)
 (defvar claude-multi--current-session-window-id)
 (defvar claude-multi-use-org-tags)
 (defvar claude-multi-output-throttle-delay)
+(defvar claude-multi--agents)
 
 ;;; Throttling variables
 
@@ -407,6 +425,8 @@ Returns a string like '💼 api | fixing issue' or nil if not available."
           (let* ((json-object-type 'plist)
                  (json-array-type 'list)
                  (json-key-type 'keyword)
+                 ;; Tell byte compiler these are used dynamically by json-read-file
+                 (_ (ignore json-object-type json-array-type json-key-type))
                  (data (json-read-file status-file))
                  (business-ctx (plist-get data :business_context)))
             (when business-ctx
@@ -559,8 +579,8 @@ Returns the position or nil if not found."
                 (insert (format "- Remaining :: %s tokens\n"
                                (claude-multi--format-number remaining)))
                 ;; Visual progress bar
-                (let ((bar-width 40)
-                      (filled (round (* bar-width (/ pct 100.0)))))
+                (let* ((bar-width 40)
+                       (filled (round (* bar-width (/ pct 100.0)))))
                   (insert "- Progress :: [")
                   (insert (make-string filled ?█))
                   (insert (make-string (- bar-width filled) ?░))
@@ -775,7 +795,7 @@ If file-notify is not available, silently returns without setting up watch."
                                     (file-notify-add-watch
                                      status-file
                                      '(change)
-                                     (lambda (event)
+                                     (lambda (_event)
                                        (claude-multi--update-agent-status-display agent)))
                                     claude-multi--status-file-watches))
                           (claude-multi--update-agent-status-display agent))
@@ -801,7 +821,7 @@ If file-notify is not available, silently returns without setting up watch."
 (defun claude-multi--stop-all-status-watches ()
   "Stop all status file watches."
   (when claude-multi--status-file-watches
-    (maphash (lambda (agent-id watch-desc)
+    (maphash (lambda (_agent-id watch-desc)
               (file-notify-rm-watch watch-desc))
             claude-multi--status-file-watches)
     (clrhash claude-multi--status-file-watches))
