@@ -7,6 +7,8 @@
 
 ;;; Code:
 
+(message ">>> CLAUDE-MULTI: Starting to load config.el")
+
 (eval-and-compile
   (require 'subr-x))  ; For string-empty-p, string-trim
 
@@ -421,6 +423,8 @@ ACTION-FN is called with point at the beginning of each headline."
 ;; Keybindings
 ;; Note: Keybindings using map! macro should be set up in packages.el
 ;; to avoid byte-compilation issues with Doom Emacs-specific macros
+
+(message ">>> CLAUDE-MULTI: Finished loading config.el successfully")
 
 (provide 'claude-multi-config)
 ;;; config.el ends here
