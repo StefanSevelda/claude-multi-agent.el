@@ -254,11 +254,6 @@ Returns a plist with :name, :color, :text, :bg properties."
   ;; Update progress buffer
   (claude-multi--update-agent-status agent)
 
-  ;; Cleanup worktree if configured
-  (when (and claude-multi-auto-cleanup
-             (claude-agent-worktree-path agent))
-    (claude-multi--delete-worktree agent))
-
   ;; Handle buffer cleanup
   (claude-multi--handle-buffer-cleanup agent))
 
@@ -268,9 +263,8 @@ Returns a plist with :name, :color, :text, :bg properties."
     ('keep-all nil)  ; User manually closes kitty windows
     ('auto-close-success
      (when (eq (claude-agent-status agent) 'completed)
-       ;; Only cleanup worktree, leave kitty window for user to review
-       (when (claude-agent-worktree-path agent)
-         (claude-multi--delete-worktree agent))))
+       ;; Leave kitty window for user to review
+       nil))
     ('ask
      (when (y-or-n-p (format "Close kitty window for %s? " (claude-agent-name agent)))
        (claude-multi--kill-agent agent)))))
@@ -311,12 +305,6 @@ Returns a plist with :name, :color, :text, :bg properties."
     (when-let ((buf (claude-agent-context-buffer agent)))
       (when (buffer-live-p buf)
         (kill-buffer buf)))
-
-    ;; Cleanup worktree (respects claude-multi-auto-cleanup setting)
-    (when (and (claude-agent-worktree-path agent)
-               claude-multi-auto-cleanup)
-      (claude-multi--delete-worktree agent)
-      (message "Cleaned up worktree: %s" (claude-agent-worktree-path agent)))
 
     ;; Remove from agents list
     (setq claude-multi--agents
