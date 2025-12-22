@@ -255,6 +255,46 @@ Agent will cd into the worktree directory before launching Claude."
       (goto-char (point-min)))
     (display-buffer buf)))
 
+;;;###autoload
+(defun claude-multi/toggle-all-status-drawers ()
+  "Toggle visibility of all agent STATUS drawers in the progress buffer."
+  (interactive)
+  (when (and claude-multi--progress-buffer
+             (buffer-live-p claude-multi--progress-buffer))
+    (with-current-buffer claude-multi--progress-buffer
+      (save-excursion
+        (goto-char (point-min))
+        ;; Find all agent headlines (they start with **)
+        (while (re-search-forward "^\\*\\* " nil t)
+          (beginning-of-line)
+          (org-cycle))))))
+
+;;;###autoload
+(defun claude-multi/show-all-status-drawers ()
+  "Show all agent STATUS drawers in the progress buffer."
+  (interactive)
+  (when (and claude-multi--progress-buffer
+             (buffer-live-p claude-multi--progress-buffer))
+    (with-current-buffer claude-multi--progress-buffer
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward "^\\*\\* " nil t)
+          (beginning-of-line)
+          (org-show-subtree))))))
+
+;;;###autoload
+(defun claude-multi/hide-all-status-drawers ()
+  "Hide all agent STATUS drawers in the progress buffer."
+  (interactive)
+  (when (and claude-multi--progress-buffer
+             (buffer-live-p claude-multi--progress-buffer))
+    (with-current-buffer claude-multi--progress-buffer
+      (save-excursion
+        (goto-char (point-min))
+        (while (re-search-forward "^\\*\\* " nil t)
+          (beginning-of-line)
+          (org-hide-drawer-all))))))
+
 ;; Note: claude-multi/send-input removed - user types directly in kitty terminal
 
 ;;;###autoload

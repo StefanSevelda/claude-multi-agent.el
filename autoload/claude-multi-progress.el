@@ -132,11 +132,16 @@
 
         (insert "\n")
 
-        ;; STATUS drawer (collapsed by default) - contains all details
+        ;; STATUS drawer - contains all details (will be shown by default)
         (insert "   :STATUS:\n")
         (insert (format "   <!-- status-marker-%s -->\n" (claude-agent-id agent)))
         (insert "   /Waiting for status update.../\n")
-        (insert "   :END:\n\n")))))
+        (insert "   :END:\n\n")
+
+        ;; Show the STATUS drawer by default (org-mode collapses drawers by default)
+        (save-excursion
+          (forward-line -5)  ; Go back to the ** headline
+          (org-show-subtree))))))
 
 ;;; Output appending
 
@@ -667,7 +672,8 @@ The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
                                (claude-agent-working-directory agent)
                                default-directory))
                  (status-file (expand-file-name "status.json" agent-dir))
-                 (content (claude-multi--parse-status-json status-file)))
+                 (content (claude-multi--parse-status-json status-file))
+                 (headline-pos nil))
             ;; Find the agent's status marker inside the STATUS drawer
             (save-excursion
               (goto-char (point-min))
@@ -687,7 +693,20 @@ The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
                     (goto-char insert-pos)
                     (if content
                         (insert content "\n")
-                      (insert "/Status file not found or empty/\n"))))))))
+                      (insert "/Status file not found or empty/\n"))
+
+                    ;; Find the headline position for this agent
+                    (goto-char (point-min))
+                    (when (re-search-forward
+                           (format "^\\*\\* .* %s" (regexp-quote (claude-agent-id agent)))
+                           nil t)
+                      (setq headline-pos (line-beginning-position)))))))
+
+            ;; Auto-expand drawer if agent is waiting for input
+            (when (and headline-pos content (string-match-p "WAITING FOR INPUT" content))
+              (save-excursion
+                (goto-char headline-pos)
+                (org-show-subtree)))))
       (setq claude-multi--status-update-in-progress nil))))
 
 ;;;###autoload
