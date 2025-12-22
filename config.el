@@ -170,6 +170,10 @@ Agent will cd into the directory before launching Claude."
   (interactive)
   (unless claude-multi--session-start-time
     (claude-multi/start-session))
+  ;; Ensure progress buffer exists
+  (unless (and claude-multi--progress-buffer
+               (buffer-live-p claude-multi--progress-buffer))
+    (claude-multi/open-progress))
   (let* ((task (read-string "Task description: "))
          (directory (read-directory-name "Working directory: " default-directory nil t))
          (agent (claude-multi--create-agent task)))
@@ -188,6 +192,10 @@ Agent will cd into the worktree directory before launching Claude."
   (interactive)
   (unless claude-multi--session-start-time
     (claude-multi/start-session))
+  ;; Ensure progress buffer exists
+  (unless (and claude-multi--progress-buffer
+               (buffer-live-p claude-multi--progress-buffer))
+    (claude-multi/open-progress))
   (let* ((task (read-string "Task description: "))
          (directory (read-directory-name "Worktree directory: " nil nil t))
          (branch (read-string "Branch name: "))
