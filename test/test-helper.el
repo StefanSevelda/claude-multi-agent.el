@@ -59,6 +59,17 @@
   "Mock version for tests - does nothing."
   nil)
 
+;; Mock file-notify functions that may not be available in batch mode
+(unless (fboundp 'file-notify-add-watch)
+  (defun file-notify-add-watch (file flags callback)
+    "Mock version for tests - returns a dummy descriptor."
+    'test-watch-descriptor))
+
+(unless (fboundp 'file-notify-rm-watch)
+  (defun file-notify-rm-watch (descriptor)
+    "Mock version for tests - does nothing."
+    nil))
+
 ;; Define the toggle commands that are in config.el
 ;; These need to be available for the progress visibility tests
 (defun claude-multi/show-all-status-drawers ()

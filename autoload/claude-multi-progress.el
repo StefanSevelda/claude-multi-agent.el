@@ -720,32 +720,35 @@ The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
 (defun claude-multi--watch-agent-status-file (agent)
   "Watch AGENT's status.json file for changes and auto-update.
 Watches the agent's directory initially, then switches to watching
-the status.json file once it's created."
-  (unless claude-multi--status-file-watches
-    (setq claude-multi--status-file-watches (make-hash-table :test 'equal)))
-  (unless claude-multi--status-watch-upgraded
-    (setq claude-multi--status-watch-upgraded (make-hash-table :test 'equal)))
+the status.json file once it's created.
+If file-notify is not available, silently returns without setting up watch."
+  ;; Check if file-notify is available
+  (when (fboundp 'file-notify-add-watch)
+    (unless claude-multi--status-file-watches
+      (setq claude-multi--status-file-watches (make-hash-table :test 'equal)))
+    (unless claude-multi--status-watch-upgraded
+      (setq claude-multi--status-watch-upgraded (make-hash-table :test 'equal)))
 
-  (let* ((agent-id (claude-agent-id agent))
-         (agent-dir (or (claude-agent-worktree-path agent)
-                       (claude-agent-working-directory agent)
-                       default-directory))
-         (status-file (expand-file-name "status.json" agent-dir)))
-    ;; If status.json already exists, watch it directly
-    (if (file-exists-p status-file)
-        (progn
-          (puthash agent-id t claude-multi--status-watch-upgraded)
-          (puthash agent-id
-                   (file-notify-add-watch
-                    status-file
-                    '(change)
-                    (lambda (event)
-                      ;; Only process if the event is about status.json
-                      (when (string-match-p "status\\.json" (format "%s" event))
-                        (claude-multi--update-agent-status-display agent))))
-                   claude-multi--status-file-watches))
-      ;; Watch directory and upgrade to file watch when created
-      (puthash agent-id
+    (let* ((agent-id (claude-agent-id agent))
+           (agent-dir (or (claude-agent-worktree-path agent)
+                         (claude-agent-working-directory agent)
+                         default-directory))
+           (status-file (expand-file-name "status.json" agent-dir)))
+      ;; If status.json already exists, watch it directly
+      (if (file-exists-p status-file)
+          (progn
+            (puthash agent-id t claude-multi--status-watch-upgraded)
+            (puthash agent-id
+                     (file-notify-add-watch
+                      status-file
+                      '(change)
+                      (lambda (event)
+                        ;; Only process if the event is about status.json
+                        (when (string-match-p "status\\.json" (format "%s" event))
+                          (claude-multi--update-agent-status-display agent))))
+                     claude-multi--status-file-watches))
+        ;; Watch directory and upgrade to file watch when created
+        (puthash agent-id
                (file-notify-add-watch
                 agent-dir
                 '(change)
@@ -771,8 +774,8 @@ the status.json file once it's created."
                       ;; File doesn't exist yet, just update display
                       (claude-multi--update-agent-status-display agent)))))
                claude-multi--status-file-watches))
-    ;; Initial update
-    (claude-multi--update-agent-status-display agent)))
+      ;; Initial update
+      (claude-multi--update-agent-status-display agent))))
 
 ;;;###autoload
 (defun claude-multi--stop-watching-agent-status (agent)
