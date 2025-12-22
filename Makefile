@@ -66,8 +66,8 @@ install-test-deps: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
 	@echo "✓ All test dependencies installed"
 
 test: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
-	@echo "Running tests with Buttercup..."
-	@$(EMACS) -batch \
+	@echo "Running tests with Buttercup (60 second timeout)..."
+	@timeout 60 $(EMACS) -batch \
 		-L . \
 		-L autoload \
 		-L test \
@@ -78,7 +78,8 @@ test: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
 		-l buttercup \
 		-l test/test-kitty-integration.el \
 		-l test/test-progress-visibility.el \
-		-f buttercup-run-discover
+		-f buttercup-run-discover \
+	|| (echo "Tests timed out or failed"; exit 1)
 
 clean:
 	@echo "Cleaning compiled files and test dependencies..."

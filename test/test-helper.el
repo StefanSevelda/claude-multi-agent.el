@@ -46,6 +46,19 @@
 (defvar claude-multi--agent-id-counter 0
   "Counter for generating agent IDs.")
 
+;; Mock org functions that can hang in test environment
+(defun org-show-subtree ()
+  "Mock version for tests - does nothing."
+  nil)
+
+(defun org-hide-drawer-all ()
+  "Mock version for tests - does nothing."
+  nil)
+
+(defun org-cycle (&optional arg)
+  "Mock version for tests - does nothing."
+  nil)
+
 ;; Define the toggle commands that are in config.el
 ;; These need to be available for the progress visibility tests
 (defun claude-multi/show-all-status-drawers ()

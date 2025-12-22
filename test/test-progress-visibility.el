@@ -26,6 +26,16 @@
     (setq claude-multi--agents nil)
     (setq claude-multi--progress-buffer (get-buffer-create "*test-progress*"))
 
+    ;; Put the buffer in org-mode to prevent hanging on org functions
+    (with-current-buffer claude-multi--progress-buffer
+      (org-mode))
+
+    ;; Mock org functions globally to prevent hanging
+    (spy-on 'org-show-subtree :and-return-value nil)
+    (spy-on 'org-cycle :and-return-value nil)
+    (spy-on 'org-hide-drawer-all :and-return-value nil)
+    (spy-on 'org-element-at-point :and-return-value nil)
+
     ;; Mock functions that have side effects for non-watching tests
     (spy-on 'claude-multi--watch-agent-status-file))
 
@@ -202,9 +212,6 @@
         (claude-multi--add-agent-section agent1)
         (claude-multi--add-agent-section agent2)
 
-        ;; Mock org-show-subtree to track calls
-        (spy-on 'org-show-subtree)
-
         (claude-multi/show-all-status-drawers)
 
         ;; Should be called once for each agent
@@ -223,9 +230,6 @@
         (claude-multi--init-progress-buffer)
         (claude-multi--add-agent-section agent)
 
-        ;; Mock org-hide-drawer-all
-        (spy-on 'org-hide-drawer-all)
-
         (claude-multi/hide-all-status-drawers)
 
         (expect 'org-hide-drawer-all :to-have-been-called)))
@@ -242,9 +246,6 @@
 
         (claude-multi--init-progress-buffer)
         (claude-multi--add-agent-section agent)
-
-        ;; Mock org-cycle
-        (spy-on 'org-cycle)
 
         (claude-multi/toggle-all-status-drawers)
 
