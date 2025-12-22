@@ -421,19 +421,22 @@ ACTION-FN is called with point at the beginning of each headline."
   (visual-line-mode 1))
 
 ;; Keybindings
-(when (featurep 'doom)
-  (map! :leader
-        :prefix ("c m" . "claude-multi")
-        :desc "Start session"           "s" #'claude-multi/start-session
-        :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
-        :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
-        :desc "Open progress"           "p" #'claude-multi/open-progress
-        :desc "Dashboard"               "d" #'claude-multi/dashboard
-        :desc "Focus agent"             "f" #'claude-multi/focus-agent
-        :desc "Kill agent"              "k" #'claude-multi/kill-agent
-        :desc "Kill all"                "K" #'claude-multi/kill-all-agents
-        :desc "Export progress"         "e" #'claude-multi/export-progress
-        :desc "List worktrees"          "l" #'claude-multi/list-worktrees))
+;; Set up keybindings after Doom's keybinds are loaded
+;; Using eval to hide from byte-compiler
+(with-eval-after-load 'doom-keybinds
+  (eval
+   '(map! :leader
+          :prefix ("c m" . "claude-multi")
+          :desc "Start session"           "s" #'claude-multi/start-session
+          :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
+          :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
+          :desc "Open progress"           "p" #'claude-multi/open-progress
+          :desc "Dashboard"               "d" #'claude-multi/dashboard
+          :desc "Focus agent"             "f" #'claude-multi/focus-agent
+          :desc "Kill agent"              "k" #'claude-multi/kill-agent
+          :desc "Kill all"                "K" #'claude-multi/kill-all-agents
+          :desc "Export progress"         "e" #'claude-multi/export-progress
+          :desc "List worktrees"          "l" #'claude-multi/list-worktrees)))
 
 (message ">>> CLAUDE-MULTI: Finished loading config.el successfully")
 
