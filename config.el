@@ -34,11 +34,6 @@
                  (const :tag "Internal .git/worktrees" internal))
   :group 'claude-multi)
 
-(defcustom claude-multi-auto-cleanup t
-  "Automatically cleanup worktrees when agents complete."
-  :type 'boolean
-  :group 'claude-multi)
-
 (defcustom claude-multi-claude-command "claude"
   "Command to run Claude Code CLI.
 This can be customized to use different binary names (e.g., 'claude26')."
@@ -333,8 +328,7 @@ Agent will cd into the worktree directory before launching Claude."
       :desc "Kill agent"              "k" #'claude-multi/kill-agent
       :desc "Kill all"                "K" #'claude-multi/kill-all-agents
       :desc "Export progress"         "e" #'claude-multi/export-progress
-      :desc "List worktrees"          "l" #'claude-multi/list-worktrees
-      :desc "Cleanup worktrees"       "c" #'claude-multi/cleanup-orphaned-worktrees)
+      :desc "List worktrees"          "l" #'claude-multi/list-worktrees)
 
 (provide 'claude-multi-config)
 ;;; config.el ends here
