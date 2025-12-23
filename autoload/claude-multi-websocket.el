@@ -172,15 +172,17 @@ WS is the connection, FRAME contains the message data."
 (defun claude-multi-ws--handle-mcp-request (agent-id message-data _ws)
   "Handle MCP request from AGENT-ID with MESSAGE-DATA.
 WS is the WebSocket connection (unused, but available for future use)."
-  ;; Forward to MCP handler (will be implemented by Agent 2)
+  ;; Forward to MCP handler
   (if (fboundp 'claude-multi-mcp--handle-request)
-      (claude-multi-mcp--handle-request agent-id message-data)
+      (let ((response (claude-multi-mcp--handle-request agent-id message-data)))
+        ;; Send response back to agent
+        (claude-multi-ws--send-message agent-id response))
     ;; MCP module not loaded yet - send stub response
     (message "MCP request from %s (handler not loaded yet)" agent-id)
     (let ((request-id (cdr (assoc 'id message-data))))
       (claude-multi-ws--send-message
        agent-id
-       `((type . "mcp-response")
+       `((jsonrpc . "2.0")
          (id . ,request-id)
          (error . ((code . -32601)
                    (message . "MCP handler not loaded"))))))))

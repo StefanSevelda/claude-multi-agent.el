@@ -79,6 +79,7 @@ test: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
 		-l test/test-simple.el \
 		-l test/test-kitty-integration.el \
 		-l test/test-drawer-core-logic.el \
+		-l test/mcp-test.el \
 		-f buttercup-run \
 	|| (echo "Tests timed out or failed"; exit 1)
 
