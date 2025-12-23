@@ -4,7 +4,7 @@
 
 | Agent | Phase | Status | Branch | Started | Completed |
 |-------|-------|--------|--------|---------|-----------|
-| Agent 1 | WebSocket | 🟡 Not Started | feature/websocket-foundation | - | - |
+| Agent 1 | WebSocket | 🔵 In Progress | feature/websocket-foundation | 2025-12-22 | - |
 | Agent 2 | MCP | 🟡 Not Started | feature/mcp-protocol | - | - |
 | Agent 3 | Ediff | 🟡 Not Started | feature/ediff-integration | - | - |
 | Agent 4 | Session | 🟡 Not Started | feature/session-persistence | - | - |

@@ -85,6 +85,25 @@ Available methods: popup, markdown, modeline, sound"
                  (const :tag "Ask before closing" ask))
   :group 'claude-multi)
 
+(defcustom claude-multi-websocket-enabled t
+  "Enable WebSocket communication for real-time agent interaction.
+When enabled, agents can communicate with Emacs via WebSocket for MCP protocol support."
+  :type 'boolean
+  :group 'claude-multi)
+
+(defcustom claude-multi-websocket-fallback t
+  "Fall back to polling if WebSocket connection is lost.
+When enabled, agents will automatically switch to polling-based monitoring
+if their WebSocket connection disconnects."
+  :type 'boolean
+  :group 'claude-multi)
+
+(defcustom claude-multi-websocket-port-range '(10000 65535)
+  "Port range for WebSocket server.
+Server will try to bind to an available port in this range."
+  :type '(list integer integer)
+  :group 'claude-multi)
+
 (defcustom claude-multi-agent-color-schemes
   '((1  :name "Bright Red"       :color "#FF4444" :text "#FFE5E5" :bg "#1a0808")
     (2  :name "Cyan"             :color "#00D9FF" :text "#E0F8FF" :bg "#081418")
@@ -181,7 +200,11 @@ Used for round-robin split placement or intelligent tab management.")
   (require 'claude-multi-agents)
   (require 'claude-multi-progress)
   (require 'claude-multi-worktree)
-  (require 'claude-multi-notifications))
+  (require 'claude-multi-notifications)
+  ;; WebSocket support (optional - only loads if websocket package available)
+  (when (and claude-multi-websocket-enabled
+             (require 'websocket nil t))
+    (require 'claude-multi-websocket)))
 
 ;; Interactive commands
 
