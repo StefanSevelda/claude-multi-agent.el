@@ -104,6 +104,22 @@ Server will try to bind to an available port in this range."
   :type '(list integer integer)
   :group 'claude-multi)
 
+(defcustom claude-multi-session-directory
+  (expand-file-name "claude-multi-sessions" user-emacs-directory)
+  "Directory for storing session files."
+  :type 'directory
+  :group 'claude-multi)
+
+(defcustom claude-multi-session-autosave-interval 300
+  "Seconds between automatic session saves (0 to disable)."
+  :type 'integer
+  :group 'claude-multi)
+
+(defcustom claude-multi-session-retention-days 30
+  "Number of days to keep old sessions (0 for unlimited)."
+  :type 'integer
+  :group 'claude-multi)
+
 (defcustom claude-multi-agent-color-schemes
   '((1  :name "Bright Red"       :color "#FF4444" :text "#FFE5E5" :bg "#1a0808")
     (2  :name "Cyan"             :color "#00D9FF" :text "#E0F8FF" :bg "#081418")
@@ -204,7 +220,9 @@ Used for round-robin split placement or intelligent tab management.")
   ;; WebSocket support (optional - only loads if websocket package available)
   (when (and claude-multi-websocket-enabled
              (require 'websocket nil t))
-    (require 'claude-multi-websocket)))
+    (require 'claude-multi-websocket))
+  ;; Session persistence
+  (require 'claude-multi-session))
 
 ;; Interactive commands
 
@@ -467,7 +485,11 @@ ACTION-FN is called with point at the beginning of each headline."
           :desc "Kill agent"              "k" #'claude-multi/kill-agent
           :desc "Kill all"                "K" #'claude-multi/kill-all-agents
           :desc "Export progress"         "e" #'claude-multi/export-progress
-          :desc "List worktrees"          "l" #'claude-multi/list-worktrees)))
+          :desc "List worktrees"          "l" #'claude-multi/list-worktrees
+          :desc "Save session"            "S" #'claude-multi/save-session
+          :desc "Restore session"         "R" #'claude-multi/restore-session
+          :desc "List sessions"           "L" #'claude-multi/list-sessions
+          :desc "Delete session"          "D" #'claude-multi/delete-session)))
 
 (message ">>> CLAUDE-MULTI: Finished loading config.el successfully")
 
