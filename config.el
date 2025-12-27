@@ -87,7 +87,8 @@ Available methods: popup, markdown, modeline, sound"
 
 (defcustom claude-multi-websocket-enabled t
   "Enable WebSocket communication for real-time agent interaction.
-When enabled, agents can communicate with Emacs via WebSocket for MCP protocol support."
+When enabled, agents can communicate with Emacs via WebSocket for MCP
+protocol support."
   :type 'boolean
   :group 'claude-multi)
 
@@ -155,7 +156,8 @@ Server will try to bind to an available port in this range."
 
 (defcustom claude-multi-use-org-tags t
   "Whether to use org-mode tags in agent headlines.
-When enabled, agent status will be shown as org-mode tags (e.g., :running:, :completed:)."
+When enabled, agent status will be shown as org-mode tags
+\(e.g., :running:, :completed:)."
   :type 'boolean
   :group 'claude-multi)
 

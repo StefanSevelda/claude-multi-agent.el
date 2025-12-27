@@ -21,6 +21,15 @@
 (declare-function claude-agent-working-directory "claude-multi-agents")
 (declare-function claude-multi-session--save "claude-multi-session")
 (declare-function claude-multi-session--list-sessions "claude-multi-session")
+(declare-function flycheck-error-line "flycheck")
+(declare-function flycheck-error-column "flycheck")
+(declare-function flycheck-error-message "flycheck")
+(declare-function flycheck-error-level "flycheck")
+(declare-function flycheck-overlay-errors-in "flycheck")
+(declare-function flymake-diagnostic-text "flymake")
+(declare-function flymake-diagnostic-beg "flymake")
+(declare-function flymake-diagnostic-end "flymake")
+(declare-function flymake-diagnostic-type "flymake")
 
 ;;; Global variables
 
@@ -221,7 +230,7 @@ Callback signature: (lambda (result) ...) where result is an alist."
 PARAMS: ((file . \"path\") (description . \"...\"))."
   (let* ((request-id (cdr (assoc 'request-id params)))
          (file (cdr (assoc 'file params)))
-         (description (or (cdr (assoc 'description params)) "Review changes")))
+         (_description (or (cdr (assoc 'description params)) "Review changes")))
 
     ;; Store callback for later completion
     (claude-multi-mcp--defer-response
@@ -263,7 +272,7 @@ PARAMS: ((file . \"path\") (description . \"...\"))."
 
 ;; Diagnostics operations
 
-(defun claude-multi-mcp--tool-diagnostics-get (agent-id params)
+(defun claude-multi-mcp--tool-diagnostics-get (_agent-id params)
   "Get Flymake/Flycheck diagnostics.
 PARAMS: ((file . \"path\") (severity . \"error\"))."
   (let* ((file (cdr (assoc 'file params)))

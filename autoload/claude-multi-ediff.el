@@ -212,8 +212,7 @@ If FILES is provided, use that list instead of detecting changes."
   "Skip to next file in active ediff review."
   (interactive)
   (if claude-multi--current-ediff-agent
-      (let* ((session (claude-agent-ediff-session claude-multi--current-ediff-agent)))
-        (claude-multi-ediff--next-or-complete claude-multi--current-ediff-agent))
+      (claude-multi-ediff--next-or-complete claude-multi--current-ediff-agent)
     (message "No active ediff review session")))
 
 (defun claude-multi-ediff--accept-current ()

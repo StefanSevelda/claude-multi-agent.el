@@ -34,6 +34,7 @@
 (declare-function claude-multi--update-session-stats "claude-multi-progress")
 (declare-function claude-multi-ws--is-connected "claude-multi-websocket")
 (declare-function claude-multi-ws--get-port-env "claude-multi-websocket")
+(declare-function markdown-mode "markdown-mode")
 
 ;; Variables defined in config.el
 (defvar claude-multi--agents)
@@ -158,13 +159,13 @@ SESSION-ID can be a filename or just the timestamp portion."
   "Save current session to file.
 Returns the session file path on success, nil on failure."
   (condition-case err
-      (progn
+      (cl-block claude-multi-session--save
         (claude-multi-session--ensure-directory)
 
         ;; Only save if there are agents
         (unless claude-multi--agents
           (message "No agents to save")
-          (return-from claude-multi-session--save nil))
+          (cl-return-from claude-multi-session--save nil))
 
         (let* ((filename (claude-multi-session--generate-filename))
                (filepath (expand-file-name filename claude-multi-session-directory))

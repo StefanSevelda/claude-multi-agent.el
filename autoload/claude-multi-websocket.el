@@ -8,8 +8,13 @@
 ;;; Code:
 
 (require 'cl-lib)
-(require 'websocket)
 (require 'json)
+
+;; WebSocket support is optional - check if available
+(unless (require 'websocket nil t)
+  (display-warning 'claude-multi
+                   "websocket library not found. WebSocket communication disabled."
+                   :warning))
 
 ;; Forward declarations
 (defvar claude-multi-websocket-enabled)
@@ -21,6 +26,13 @@
 (declare-function claude-multi--get-agent-by-id "claude-multi-agents")
 (declare-function claude-agent-id "claude-multi-agents")
 (declare-function claude-agent-status "claude-multi-agents")
+(declare-function websocket-send-text "websocket")
+(declare-function websocket-server "websocket")
+(declare-function websocket-server-close "websocket")
+(declare-function websocket-openp "websocket")
+(declare-function websocket-close "websocket")
+(declare-function websocket-frame-text "websocket")
+(declare-function websocket-server-conn-plist "websocket")
 
 ;;; Global variables
 
@@ -42,12 +54,13 @@
 (defun claude-multi-ws--start-server ()
   "Start WebSocket server on a random available port.
 Returns the port number if successful, nil otherwise."
-  (when claude-multi--ws-server
-    ;; Server already running
-    (message "WebSocket server already running on port %s" claude-multi--ws-port)
-    (return-from claude-multi-ws--start-server claude-multi--ws-port))
+  (cl-block claude-multi-ws--start-server
+    (when claude-multi--ws-server
+      ;; Server already running
+      (message "WebSocket server already running on port %s" claude-multi--ws-port)
+      (cl-return-from claude-multi-ws--start-server claude-multi--ws-port))
 
-  (condition-case err
+    (condition-case err
       (let* ((port-range claude-multi-websocket-port-range)
              (min-port (car port-range))
              (max-port (cadr port-range))
@@ -67,9 +80,9 @@ Returns the port number if successful, nil otherwise."
         (setq claude-multi--ws-port port)
         (message "WebSocket server started on port %s" port)
         port)
-    (error
-     (message "Failed to start WebSocket server: %s" (error-message-string err))
-     nil)))
+      (error
+       (message "Failed to start WebSocket server: %s" (error-message-string err))
+       nil))))
 
 ;;;###autoload
 (defun claude-multi-ws--stop-server ()
@@ -113,7 +126,8 @@ Returns the port number if found, nil otherwise."
 
 (defun claude-multi-ws--on-connection (ws)
   "Handle new WebSocket connection WS.
-The agent must send a 'register' message with its agent-id to complete registration."
+The agent must send a \\='register\\=' message with its agent-id to
+complete registration."
   (message "New WebSocket connection established (awaiting registration)")
   ;; Store temporary connection until registration
   (websocket-server-conn-plist ws :awaiting-registration t))
@@ -121,21 +135,22 @@ The agent must send a 'register' message with its agent-id to complete registrat
 (defun claude-multi-ws--on-message (ws frame)
   "Handle incoming WebSocket message.
 WS is the connection, FRAME contains the message data."
-  (condition-case err
-      (let* ((payload (websocket-frame-text frame))
-             (message-data (json-read-from-string payload))
-             (message-type (cdr (assoc 'type message-data)))
-             (agent-id (cdr (assoc 'agent_id message-data))))
+  (cl-block claude-multi-ws--on-message
+    (condition-case err
+        (let* ((payload (websocket-frame-text frame))
+               (message-data (json-read-from-string payload))
+               (message-type (cdr (assoc 'type message-data)))
+               (agent-id (cdr (assoc 'agent_id message-data))))
 
-        ;; Handle registration messages
-        (when (string= message-type "register")
-          (claude-multi-ws--handle-registration ws agent-id)
-          (return-from claude-multi-ws--on-message))
+          ;; Handle registration messages
+          (when (string= message-type "register")
+            (claude-multi-ws--handle-registration ws agent-id)
+            (cl-return-from claude-multi-ws--on-message))
 
-        ;; All other messages require an agent-id
-        (unless agent-id
-          (message "WebSocket message missing agent_id: %s" message-type)
-          (return-from claude-multi-ws--on-message))
+          ;; All other messages require an agent-id
+          (unless agent-id
+            (message "WebSocket message missing agent_id: %s" message-type)
+            (cl-return-from claude-multi-ws--on-message))
 
         ;; Route message to appropriate handler
         (let ((handler (gethash message-type claude-multi--ws-message-handlers)))
@@ -151,8 +166,8 @@ WS is the connection, FRAME contains the message data."
                (claude-multi-ws--send-message agent-id '((type . "pong"))))
               (_
                (message "Unknown WebSocket message type: %s" message-type))))))
-    (error
-     (message "Error handling WebSocket message: %s" (error-message-string err)))))
+      (error
+       (message "Error handling WebSocket message: %s" (error-message-string err))))))
 
 (defun claude-multi-ws--handle-registration (ws agent-id)
   "Handle agent registration for WebSocket connection WS with AGENT-ID."
