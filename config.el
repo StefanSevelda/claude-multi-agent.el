@@ -221,6 +221,10 @@ Used for round-robin split placement or intelligent tab management.")
   (when (and claude-multi-websocket-enabled
              (require 'websocket nil t))
     (require 'claude-multi-websocket))
+  ;; MCP Protocol
+  (require 'claude-multi-mcp)
+  ;; Ediff Integration
+  (require 'claude-multi-ediff)
   ;; Session persistence
   (require 'claude-multi-session))
 
@@ -489,7 +493,12 @@ ACTION-FN is called with point at the beginning of each headline."
           :desc "Save session"            "S" #'claude-multi/save-session
           :desc "Restore session"         "R" #'claude-multi/restore-session
           :desc "List sessions"           "L" #'claude-multi/list-sessions
-          :desc "Delete session"          "D" #'claude-multi/delete-session)))
+          :desc "Delete session"          "D" #'claude-multi/delete-session
+          (:prefix ("r" . "review")
+           :desc "Review agent changes"   "r" #'claude-multi/review-agent-changes
+           :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
+           :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
+           :desc "Next diff file"         "n" #'claude-multi/next-diff-file))))
 
 (message ">>> CLAUDE-MULTI: Finished loading config.el successfully")
 
