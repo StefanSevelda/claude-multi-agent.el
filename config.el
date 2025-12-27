@@ -7,41 +7,29 @@
 
 ;;; Code:
 
-;; Add autoload directory to load path and load modules
-(let ((autoload-dir (expand-file-name "autoload"
-                                      (or (and load-file-name
-                                               (file-name-directory load-file-name))
-                                          (and (boundp 'byte-compile-current-file)
-                                               byte-compile-current-file
-                                               (file-name-directory byte-compile-current-file))
-                                          default-directory))))
-  (add-to-list 'load-path autoload-dir)
-  (require 'claude-multi-agents)
-  (require 'claude-multi-progress)
-  (require 'claude-multi-worktree)
-  (require 'claude-multi-notifications))
+(message ">>> CLAUDE-MULTI: Starting to load config.el")
 
+(eval-and-compile
+  (require 'subr-x))  ; For string-empty-p, string-trim
+
+;;; Define defgroup and all variables BEFORE loading modules
 (defgroup claude-multi nil
   "Manage multiple Claude Code agents in parallel."
   :group 'tools
   :prefix "claude-multi-")
 
+;;; Customization variables
 (defcustom claude-multi-worktree-location 'adjacent
   "Where to create worktrees for agents.
-'adjacent - Create in ../claude-worktrees/
-'internal - Create in .git/worktrees/"
+\\='adjacent - Create in ../claude-worktrees/
+\\='internal - Create in .git/worktrees/"
   :type '(choice (const :tag "Adjacent directory" adjacent)
                  (const :tag "Internal .git/worktrees" internal))
   :group 'claude-multi)
 
-(defcustom claude-multi-auto-cleanup t
-  "Automatically cleanup worktrees when agents complete."
-  :type 'boolean
-  :group 'claude-multi)
-
 (defcustom claude-multi-claude-command "claude"
   "Command to run Claude Code CLI.
-This can be customized to use different binary names (e.g., 'claude26')."
+This can be customized to use different binary names (e.g., \\='claude26\\=')."
   :type 'string
   :group 'claude-multi)
 
@@ -55,9 +43,9 @@ Format: unix:/tmp/kitty-claude or tcp:localhost:5555"
 
 (defcustom claude-multi-kitty-window-type 'os-window
   "How to create kitty windows for agents.
-'os-window - New OS window (separate kitty instance)
-'tab - New tab in active kitty window
-'window - New kitty split in active tab"
+\\='os-window - New OS window (separate kitty instance)
+\\='tab - New tab in active kitty window
+\\='window - New kitty split in active tab"
   :type '(choice (const :tag "OS Window" os-window)
                  (const :tag "Tab" tab)
                  (const :tag "Split Window" window))
@@ -65,16 +53,16 @@ Format: unix:/tmp/kitty-claude or tcp:localhost:5555"
 
 (defcustom claude-multi-agent-spawn-type 'tab
   "How to spawn agents within the session OS window.
-'tab - Each agent gets its own tab (default)
-'split - Agents are split within tabs"
+\\='tab - Each agent gets its own tab (default)
+\\='split - Agents are split within tabs"
   :type '(choice (const :tag "New tab for each agent" tab)
                  (const :tag "Split window for each agent" split))
   :group 'claude-multi)
 
 (defcustom claude-multi-output-throttle-delay 0.5
   "Delay in seconds between progress buffer updates to reduce flashing.
-Setting this higher (e.g., 1.0) will reduce flashing but make updates less responsive.
-Setting to 0 disables throttling."
+Setting this higher (e.g., 1.0) will reduce flashing but make updates
+less responsive.  Setting to 0 disables throttling."
   :type 'number
   :group 'claude-multi)
 
@@ -89,12 +77,48 @@ Available methods: popup, markdown, modeline, sound"
 
 (defcustom claude-multi-buffer-cleanup 'auto-close-success
   "How to handle kitty windows when agents complete.
-'keep-all - Keep all windows open (user closes manually)
-'auto-close-success - Auto-cleanup worktrees for successful agents
-'ask - Ask before closing kitty windows"
+\\='keep-all - Keep all windows open (user closes manually)
+\\='auto-close-success - Auto-cleanup worktrees for successful agents
+\\='ask - Ask before closing kitty windows"
   :type '(choice (const :tag "Keep all windows" keep-all)
                  (const :tag "Auto-cleanup worktrees" auto-close-success)
                  (const :tag "Ask before closing" ask))
+  :group 'claude-multi)
+
+(defcustom claude-multi-websocket-enabled t
+  "Enable WebSocket communication for real-time agent interaction.
+When enabled, agents can communicate with Emacs via WebSocket for MCP
+protocol support."
+  :type 'boolean
+  :group 'claude-multi)
+
+(defcustom claude-multi-websocket-fallback t
+  "Fall back to polling if WebSocket connection is lost.
+When enabled, agents will automatically switch to polling-based monitoring
+if their WebSocket connection disconnects."
+  :type 'boolean
+  :group 'claude-multi)
+
+(defcustom claude-multi-websocket-port-range '(10000 65535)
+  "Port range for WebSocket server.
+Server will try to bind to an available port in this range."
+  :type '(list integer integer)
+  :group 'claude-multi)
+
+(defcustom claude-multi-session-directory
+  (expand-file-name "claude-multi-sessions" user-emacs-directory)
+  "Directory for storing session files."
+  :type 'directory
+  :group 'claude-multi)
+
+(defcustom claude-multi-session-autosave-interval 300
+  "Seconds between automatic session saves (0 to disable)."
+  :type 'integer
+  :group 'claude-multi)
+
+(defcustom claude-multi-session-retention-days 30
+  "Number of days to keep old sessions (0 for unlimited)."
+  :type 'integer
   :group 'claude-multi)
 
 (defcustom claude-multi-agent-color-schemes
@@ -113,7 +137,8 @@ Available methods: popup, markdown, modeline, sound"
 - :color - Main accent color (cursor, tab, selection, border)
 - :text - Terminal text color
 - :bg - Terminal background color"
-  :type 'list
+  :type '(repeat (list integer
+                       (plist :key-type symbol :value-type string)))
   :group 'claude-multi)
 
 ;; Legacy compatibility - extract just colors for simple access
@@ -128,6 +153,37 @@ Available methods: popup, markdown, modeline, sound"
   "Name of the central progress tracking buffer (org-mode)."
   :type 'string
   :group 'claude-multi)
+
+(defcustom claude-multi-use-org-tags t
+  "Whether to use org-mode tags in agent headlines.
+When enabled, agent status will be shown as org-mode tags
+\(e.g., :running:, :completed:)."
+  :type 'boolean
+  :group 'claude-multi)
+
+;; Forward declarations for functions in other modules
+(declare-function claude-multi--stop-all-status-watches "claude-multi-progress")
+(declare-function claude-multi--setup-notifications "claude-multi-notifications")
+(declare-function claude-multi--teardown-notifications "claude-multi-notifications")
+(declare-function claude-multi--kill-agent "claude-multi-agents")
+(declare-function claude-multi--format-duration "claude-multi-agents")
+(declare-function claude-multi--get-status-icon "claude-multi-progress")
+(declare-function claude-agent-kitty-window-id "claude-multi-agents")
+(declare-function claude-agent-name "claude-multi-agents")
+(declare-function claude-agent-status "claude-multi-agents")
+(declare-function claude-multi--select-agent "claude-multi-agents")
+(declare-function claude-multi--create-agent "claude-multi-agents")
+(declare-function claude-multi--launch-agent "claude-multi-agents")
+(declare-function claude-agent-worktree-path "claude-multi-agents")
+(declare-function claude-agent-branch-name "claude-multi-agents")
+(declare-function claude-agent-created-at "claude-multi-agents")
+(declare-function claude-agent-completed-at "claude-multi-agents")
+(declare-function claude-agent-id "claude-multi-agents")
+(declare-function claude-multi--init-progress-buffer "claude-multi-progress")
+
+;; cl-lib setf accessors for struct
+(gv-define-setter claude-agent-worktree-path (val agent) `(aset ,agent 7 ,val))
+(gv-define-setter claude-agent-branch-name (val agent) `(aset ,agent 8 ,val))
 
 ;; Global variables
 (defvar claude-multi--agents nil
@@ -150,6 +206,30 @@ Set when the first agent is spawned, used to target subsequent agents.")
   "List of kitty tab IDs for tabs created in the current session.
 Used for round-robin split placement or intelligent tab management.")
 
+;;; Load autoload modules NOW that all variables are defined
+(let ((autoload-dir (expand-file-name "autoload"
+                                      (or (and load-file-name
+                                               (file-name-directory load-file-name))
+                                          (and (boundp 'byte-compile-current-file)
+                                               byte-compile-current-file
+                                               (file-name-directory byte-compile-current-file))
+                                          default-directory))))
+  (add-to-list 'load-path autoload-dir)
+  (require 'claude-multi-agents)
+  (require 'claude-multi-progress)
+  (require 'claude-multi-worktree)
+  (require 'claude-multi-notifications)
+  ;; WebSocket support (optional - only loads if websocket package available)
+  (when (and claude-multi-websocket-enabled
+             (require 'websocket nil t))
+    (require 'claude-multi-websocket))
+  ;; MCP Protocol
+  (require 'claude-multi-mcp)
+  ;; Ediff Integration
+  (require 'claude-multi-ediff)
+  ;; Session persistence
+  (require 'claude-multi-session))
+
 ;; Interactive commands
 
 ;;;###autoload
@@ -168,60 +248,52 @@ Used for round-robin split placement or intelligent tab management.")
   (message "Claude Multi-Agent session started. Use SPC c m a to spawn agents."))
 
 ;;;###autoload
-(defun claude-multi/spawn-agent (task-description &optional directory branch)
-  "Spawn a new Claude agent with TASK-DESCRIPTION.
-Optional DIRECTORY specifies the working directory.
-Optional BRANCH specifies the git branch (creates a worktree if provided)."
-  (interactive "sTask description: ")
+(defun claude-multi/spawn-agent ()
+  "Spawn a new Claude agent in a kitty tab.
+Prompts for task description and working directory.
+Agent will cd into the directory before launching Claude."
+  (interactive)
   (unless claude-multi--session-start-time
     (claude-multi/start-session))
-  (let ((agent (claude-multi--create-agent task-description))
-        (default-directory (or directory default-directory)))
+  ;; Ensure progress buffer exists
+  (unless (and claude-multi--progress-buffer
+               (buffer-live-p claude-multi--progress-buffer))
+    (claude-multi/open-progress))
+  (let* ((task (read-string "Task description: "))
+         (directory (read-directory-name "Working directory: " default-directory nil t))
+         (agent (claude-multi--create-agent task)))
     ;; Set directory as worktree path (will be used as working directory)
-    (when directory
-      (setf (claude-agent-worktree-path agent) (expand-file-name directory)))
-    ;; Only set branch if provided (this triggers worktree creation)
+    (setf (claude-agent-worktree-path agent) (expand-file-name directory))
+    (push agent claude-multi--agents)
+    (claude-multi--launch-agent agent)
+    (message "Spawned agent: %s in %s" (claude-agent-name agent) directory)))
+
+;;;###autoload
+(defun claude-multi/spawn-agent-with-worktree ()
+  "Spawn agent with git worktree isolation in a kitty tab.
+Prompts for task description, directory, and branch name.
+Creates a new git worktree for isolated parallel development.
+Agent will cd into the worktree directory before launching Claude."
+  (interactive)
+  (unless claude-multi--session-start-time
+    (claude-multi/start-session))
+  ;; Ensure progress buffer exists
+  (unless (and claude-multi--progress-buffer
+               (buffer-live-p claude-multi--progress-buffer))
+    (claude-multi/open-progress))
+  (let* ((task (read-string "Task description: "))
+         (directory (read-directory-name "Worktree directory: " nil nil t))
+         (branch (read-string "Branch name: "))
+         (agent (claude-multi--create-agent task)))
+    ;; Set directory as worktree path
+    (setf (claude-agent-worktree-path agent) (expand-file-name directory))
+    ;; Set branch name to trigger worktree creation
     (when (and branch (not (string-empty-p branch)))
       (setf (claude-agent-branch-name agent) branch))
     (push agent claude-multi--agents)
     (claude-multi--launch-agent agent)
-    (message "Spawned agent: %s" (claude-agent-name agent))))
-
-;;;###autoload
-(defun claude-multi/spawn-agent-tab (task-description)
-  "Spawn a new Claude agent in a kitty TAB with TASK-DESCRIPTION."
-  (interactive "sTask description: ")
-  (unless claude-multi--session-start-time
-    (claude-multi/start-session))
-  (let ((claude-multi-kitty-window-type 'tab)
-        (agent (claude-multi--create-agent task-description)))
-    (push agent claude-multi--agents)
-    (claude-multi--launch-agent agent)
-    (message "Spawned agent in tab: %s" (claude-agent-name agent))))
-
-;;;###autoload
-(defun claude-multi/spawn-agent-split (task-description)
-  "Spawn a new Claude agent in a kitty SPLIT WINDOW with TASK-DESCRIPTION."
-  (interactive "sTask description: ")
-  (unless claude-multi--session-start-time
-    (claude-multi/start-session))
-  (let ((claude-multi-kitty-window-type 'window)
-        (agent (claude-multi--create-agent task-description)))
-    (push agent claude-multi--agents)
-    (claude-multi--launch-agent agent)
-    (message "Spawned agent in split: %s" (claude-agent-name agent))))
-
-;;;###autoload
-(defun claude-multi/spawn-agent-with-worktree ()
-  "Spawn agent with custom directory and branch for worktree."
-  (interactive)
-  (let* ((task (read-string "Task description: "))
-         (directory (read-directory-name "Directory (for worktree): " nil nil t))
-         (branch (read-string "Branch name (optional): ")))
-    (claude-multi/spawn-agent
-     task
-     directory
-     (if (string-empty-p branch) nil branch))))
+    (message "Spawned agent: %s in worktree %s (branch: %s)"
+             (claude-agent-name agent) directory branch)))
 
 ;;;###autoload
 (defun claude-multi/open-progress ()
@@ -267,6 +339,69 @@ Optional BRANCH specifies the git branch (creates a worktree if provided)."
       (read-only-mode 1)
       (goto-char (point-min)))
     (display-buffer buf)))
+
+;;; Drawer visibility core logic (testable, no org-mode dependencies)
+
+(defun claude-multi--find-agent-headlines ()
+  "Find all agent headline positions in the progress buffer.
+Returns a list of buffer positions where agent headlines start."
+  (when (and claude-multi--progress-buffer
+             (buffer-live-p claude-multi--progress-buffer))
+    (with-current-buffer claude-multi--progress-buffer
+      (save-excursion
+        (let ((positions nil))
+          (goto-char (point-min))
+          (while (re-search-forward "^\\*\\* " nil t)
+            (push (line-beginning-position) positions))
+          (nreverse positions))))))
+
+(defun claude-multi--apply-to-headlines (action-fn)
+  "Apply ACTION-FN to each agent headline in the progress buffer.
+ACTION-FN is called with point at the beginning of each headline."
+  (when (and claude-multi--progress-buffer
+             (buffer-live-p claude-multi--progress-buffer))
+    (with-current-buffer claude-multi--progress-buffer
+      (save-excursion
+        (dolist (pos (claude-multi--find-agent-headlines))
+          (goto-char pos)
+          (funcall action-fn))))))
+
+;;; Display functions (org-mode specific, thin wrappers)
+
+(defun claude-multi--org-show-subtree-at-point ()
+  "Show org subtree at point. Wrapper for org-mode function."
+  (when (fboundp 'org-show-subtree)
+    (org-show-subtree)))
+
+(defun claude-multi--org-hide-drawer-at-point ()
+  "Hide org drawer at point. Wrapper for org-mode function."
+  (when (fboundp 'org-hide-drawer-all)
+    (org-hide-drawer-all)))
+
+(defun claude-multi--org-cycle-at-point ()
+  "Cycle org visibility at point. Wrapper for org-mode function."
+  (when (fboundp 'org-cycle)
+    (org-cycle)))
+
+;;; User commands
+
+;;;###autoload
+(defun claude-multi/toggle-all-status-drawers ()
+  "Toggle visibility of all agent STATUS drawers in the progress buffer."
+  (interactive)
+  (claude-multi--apply-to-headlines #'claude-multi--org-cycle-at-point))
+
+;;;###autoload
+(defun claude-multi/show-all-status-drawers ()
+  "Show all agent STATUS drawers in the progress buffer."
+  (interactive)
+  (claude-multi--apply-to-headlines #'claude-multi--org-show-subtree-at-point))
+
+;;;###autoload
+(defun claude-multi/hide-all-status-drawers ()
+  "Hide all agent STATUS drawers in the progress buffer."
+  (interactive)
+  (claude-multi--apply-to-headlines #'claude-multi--org-hide-drawer-at-point))
 
 ;; Note: claude-multi/send-input removed - user types directly in kitty terminal
 
@@ -327,32 +462,47 @@ Optional BRANCH specifies the git branch (creates a worktree if provided)."
 
 ;; Progress buffer mode
 
+(defvar auto-revert-interval)  ; Defined in autorevert.el
+(declare-function org-indent-mode "org-indent")  ; Defined in org-indent.el
+
 (define-derived-mode claude-multi-progress-mode org-mode "Claude-Multi-Progress"
   "Major mode for Claude Multi-Agent progress tracking in org-mode format."
   (setq-local auto-revert-interval 0.5)
   (auto-revert-mode 1)
   (read-only-mode 1)
   ;; Enable org-mode features
-  (org-indent-mode 1)
+  (when (fboundp 'org-indent-mode)
+    (org-indent-mode 1))
   (visual-line-mode 1))
 
 ;; Keybindings
+;; Set up keybindings after Doom's keybinds are loaded
+;; Using eval to hide from byte-compiler
+(with-eval-after-load 'doom-keybinds
+  (eval
+   '(map! :leader
+          :prefix ("c m" . "claude-multi")
+          :desc "Start session"           "s" #'claude-multi/start-session
+          :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
+          :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
+          :desc "Open progress"           "p" #'claude-multi/open-progress
+          :desc "Dashboard"               "d" #'claude-multi/dashboard
+          :desc "Focus agent"             "f" #'claude-multi/focus-agent
+          :desc "Kill agent"              "k" #'claude-multi/kill-agent
+          :desc "Kill all"                "K" #'claude-multi/kill-all-agents
+          :desc "Export progress"         "e" #'claude-multi/export-progress
+          :desc "List worktrees"          "l" #'claude-multi/list-worktrees
+          :desc "Save session"            "S" #'claude-multi/save-session
+          :desc "Restore session"         "R" #'claude-multi/restore-session
+          :desc "List sessions"           "L" #'claude-multi/list-sessions
+          :desc "Delete session"          "D" #'claude-multi/delete-session
+          (:prefix ("r" . "review")
+           :desc "Review agent changes"   "r" #'claude-multi/review-agent-changes
+           :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
+           :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
+           :desc "Next diff file"         "n" #'claude-multi/next-diff-file))))
 
-(map! :leader
-      :prefix ("c m" . "claude-multi")
-      :desc "Start session"           "s" #'claude-multi/start-session
-      :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
-      :desc "Spawn agent in tab"      "t" #'claude-multi/spawn-agent-tab
-      :desc "Spawn agent in split"    "w" #'claude-multi/spawn-agent-split
-      :desc "Spawn with worktree"     "W" #'claude-multi/spawn-agent-with-worktree
-      :desc "Open progress"           "p" #'claude-multi/open-progress
-      :desc "Dashboard"               "d" #'claude-multi/dashboard
-      :desc "Focus agent"             "f" #'claude-multi/focus-agent
-      :desc "Kill agent"              "k" #'claude-multi/kill-agent
-      :desc "Kill all"                "K" #'claude-multi/kill-all-agents
-      :desc "Export progress"         "e" #'claude-multi/export-progress
-      :desc "List worktrees"          "T" #'claude-multi/list-worktrees
-      :desc "Cleanup worktrees"       "c" #'claude-multi/cleanup-orphaned-worktrees)
+(message ">>> CLAUDE-MULTI: Finished loading config.el successfully")
 
 (provide 'claude-multi-config)
 ;;; config.el ends here

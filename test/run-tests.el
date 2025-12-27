@@ -17,7 +17,11 @@
 (require 'buttercup)
 
 ;; Load test files
-(load (expand-file-name "test-vterm-integration.el"
+(load (expand-file-name "test-kitty-integration.el"
+                        (file-name-directory load-file-name)))
+(load (expand-file-name "test-progress-visibility.el"
+                        (file-name-directory load-file-name)))
+(load (expand-file-name "mcp-test.el"
                         (file-name-directory load-file-name)))
 
 ;; Run tests

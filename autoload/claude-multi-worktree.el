@@ -10,6 +10,15 @@
 (require 'f)
 (require 's)
 
+;; Forward declarations
+(declare-function magit-status "magit" (&optional directory cache))
+(declare-function claude-multi--select-agent "config")
+
+;; Forward declarations for variables defined in config.el
+(defvar claude-multi-claude-command)
+(defvar claude-multi-worktree-location)
+(defvar claude-multi--agents)
+
 ;;; Worktree detection
 
 ;;;###autoload
@@ -55,7 +64,7 @@
 ;;; Worktree creation
 
 ;;;###autoload
-(defun claude-multi--build-worktree-command (agent repo-root worktree-path branch-name)
+(defun claude-multi--build-worktree-command (_agent repo-root worktree-path branch-name)
   "Build shell command to create worktree for AGENT in kitty terminal.
 REPO-ROOT is the git repository root directory.
 WORKTREE-PATH is the target path for the worktree.
@@ -148,8 +157,9 @@ REPO-ROOT is the git repository root.
 REPO-NAME is the name of the repository.
 BRANCH-NAME is the branch name for the worktree.
 
-When using 'adjacent mode, this mimics gwt behavior:
-worktrees are created as siblings to the main repo at ../<repo-name>-<branch-name>"
+When using \\='adjacent mode, this mimics gwt behavior:
+worktrees are created as siblings to the main repo at
+../<repo-name>-<branch-name>"
   (pcase claude-multi-worktree-location
     ('adjacent
      ;; Create worktrees as siblings to repo (same as gwt does)
@@ -161,41 +171,6 @@ worktrees are created as siblings to the main repo at ../<repo-name>-<branch-nam
     (_
      ;; Default to adjacent (gwt-style)
      (expand-file-name (format "../%s-%s" repo-name branch-name) repo-root))))
-
-;;; Worktree deletion
-
-;;;###autoload
-(defun claude-multi--delete-worktree (agent)
-  "Delete the worktree associated with AGENT."
-  (when-let ((worktree-path (claude-agent-worktree-path agent)))
-    (condition-case err
-        (progn
-          ;; First, remove the worktree using git
-          (let ((default-directory (claude-multi--get-git-root)))
-            (with-temp-buffer
-              (let ((exit-code (call-process "git" nil t nil
-                                            "worktree" "remove"
-                                            "--force"
-                                            worktree-path)))
-                (unless (= 0 exit-code)
-                  (error "Git worktree remove failed: %s" (buffer-string))))))
-
-          ;; Delete the branch
-          (let ((branch-name (format "claude/%s" (claude-agent-id agent)))
-                (default-directory (claude-multi--get-git-root)))
-            (call-process "git" nil nil nil
-                         "branch" "-D" branch-name))
-
-          (message "Deleted worktree for %s" (claude-agent-name agent)))
-
-      (error
-       (message "Failed to delete worktree for %s: %s"
-                (claude-agent-name agent)
-                (error-message-string err))
-       ;; Try to clean up the directory manually
-       (when (file-exists-p worktree-path)
-         (ignore-errors
-           (delete-directory worktree-path t)))))))
 
 ;;; Worktree listing
 
@@ -229,38 +204,6 @@ worktrees are created as siblings to the main repo at ../<repo-name>-<branch-nam
           (read-only-mode 1))
         (display-buffer buf))
     (message "No git worktrees found or not in a git repository")))
-
-;;; Cleanup utilities
-
-;;;###autoload
-(defun claude-multi/cleanup-orphaned-worktrees ()
-  "Clean up worktrees that don't have corresponding active agents."
-  (interactive)
-  (when (claude-multi--in-git-repo-p)
-    (let* ((all-worktrees (claude-multi--list-worktrees))
-           (agent-worktrees (delq nil (mapcar #'claude-agent-worktree-path
-                                             claude-multi--agents)))
-           (orphaned (cl-set-difference all-worktrees agent-worktrees
-                                       :test #'string=)))
-      ;; Filter to only Claude agent worktrees
-      (setq orphaned (cl-remove-if-not
-                     (lambda (path) (string-match-p "claude" path))
-                     orphaned))
-
-      (if orphaned
-          (when (y-or-n-p (format "Found %d orphaned worktree(s). Clean them up? "
-                                 (length orphaned)))
-            (dolist (worktree orphaned)
-              (condition-case err
-                  (progn
-                    (let ((default-directory (claude-multi--get-git-root)))
-                      (call-process "git" nil nil nil
-                                   "worktree" "remove" "--force" worktree))
-                    (message "Removed orphaned worktree: %s" worktree))
-                (error
-                 (message "Failed to remove worktree %s: %s"
-                         worktree (error-message-string err))))))
-        (message "No orphaned worktrees found")))))
 
 ;;; Validation utilities
 

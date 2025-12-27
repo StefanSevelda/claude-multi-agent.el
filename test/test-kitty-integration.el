@@ -7,6 +7,13 @@
 ;;; Code:
 
 (require 'buttercup)
+
+;; Load test helper to initialize variables and mocks
+(add-to-list 'load-path (file-name-directory load-file-name))
+(require 'test-helper)
+
+;; Load modules under test
+(add-to-list 'load-path (expand-file-name "../autoload" (file-name-directory load-file-name)))
 (require 'claude-multi-agents)
 
 (describe "Kitty Integration"
@@ -44,8 +51,9 @@
       (let ((agent (make-claude-agent :kitty-window-id "123")))
         (claude-multi--send-to-kitty agent "claude 'test task'")
         (expect 'call-process-shell-command :to-have-been-called)
-        (expect (spy-calls-args-for 'call-process-shell-command 0)
-                :to-match "send-text"))))
+        ;; Get the first argument (command string) from the spy call
+        (let ((cmd (car (spy-calls-args-for 'call-process-shell-command 0))))
+          (expect cmd :to-match "send-text")))))
 
   (describe "claude-multi--kitty-is-alive"
     (it "checks window existence successfully"
@@ -78,14 +86,17 @@
                      :context-buffer context-buf
                      :status-timer (run-with-timer 10 nil #'ignore)))
              (claude-multi--agents (list agent)))
-        (cl-letf (((symbol-function 'claude-multi--delete-worktree)
+        (cl-letf (((symbol-function 'claude-multi--stop-watching-agent-status)
                    (lambda (agent) nil))
-                  ((symbol-function 'claude-multi--remove-agent-section)
-                   (lambda (agent) nil)))
+                  ((symbol-function 'claude-multi--update-agent-status)
+                   (lambda (agent) nil))
+                  ((symbol-function 'claude-multi--update-session-stats)
+                   (lambda () nil)))
           (claude-multi--kill-agent agent)
           (expect 'call-process-shell-command :to-have-been-called)
-          (expect (spy-calls-args-for 'call-process-shell-command 0)
-                  :to-match "close-window")
+          ;; Get the first argument (command string) from the spy call
+          (let ((cmd (car (spy-calls-args-for 'call-process-shell-command 0))))
+            (expect cmd :to-match "close-window"))
           (expect claude-multi--agents :to-equal nil)))))
 
   (describe "claude-multi--setup-kitty-status-monitor"

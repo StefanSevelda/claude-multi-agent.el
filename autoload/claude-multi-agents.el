@@ -8,6 +8,37 @@
 
 (require 'cl-lib)
 
+(eval-and-compile
+  (require 'subr-x))  ; For string-trim
+
+;; Forward declarations for functions in other modules
+(declare-function claude-multi--stop-watching-agent-status "claude-multi-progress")
+(declare-function claude-multi--update-agent-status "claude-multi-progress")
+(declare-function claude-multi--add-agent-section "claude-multi-progress")
+(declare-function claude-multi--update-session-stats "claude-multi-progress")
+(declare-function claude-multi--watch-agent-status-file "claude-multi-progress")
+(declare-function claude-multi--build-worktree-command "claude-multi-worktree")
+(declare-function claude-multi--in-git-repo-p "claude-multi-worktree")
+(declare-function claude-multi--get-git-root "claude-multi-worktree")
+(declare-function claude-multi--determine-worktree-path "claude-multi-worktree")
+(declare-function claude-multi-ws--start-server "claude-multi-websocket")
+(declare-function claude-multi-ws--get-port-env "claude-multi-websocket")
+(declare-function claude-multi-ws--is-connected "claude-multi-websocket")
+
+;; Forward declarations for variables defined in config.el
+(defvar claude-multi--agent-id-counter)
+(defvar claude-multi-agent-colors)
+(defvar claude-multi-agent-color-schemes)
+(defvar claude-multi-kitty-listen-address)
+(defvar claude-multi--current-session-window-id)
+(defvar claude-multi--current-session-tab-ids)
+(defvar claude-multi-agent-spawn-type)
+(defvar claude-multi-claude-command)
+(defvar claude-multi-buffer-cleanup)
+(defvar claude-multi--agents)
+(defvar claude-multi-websocket-enabled)
+(defvar claude-multi-websocket-fallback)
+
 ;;; Agent structure
 
 (cl-defstruct claude-agent
@@ -21,10 +52,17 @@
   status-timer          ; Timer for polling kitty status
   worktree-path         ; Git worktree path (string or nil)
   branch-name           ; Git branch name for worktree (string or nil)
+  working-directory     ; Working directory where agent was launched (string)
   status                ; Agent status symbol: running, waiting-input, completed, failed
   task-description      ; Original task description (string)
   created-at            ; Timestamp when created
-  completed-at)         ; Timestamp when finished (or nil)
+  completed-at          ; Timestamp when finished (or nil)
+  websocket-connection  ; WebSocket connection object (or nil)
+  communication-backend ; Communication backend type: 'websocket or 'polling
+  mcp-enabled           ; Whether MCP protocol is enabled for this agent (boolean)
+  session-id            ; Session identifier for persistence (string or nil)
+  mcp-request-counter   ; Counter for MCP request IDs (integer)
+  ediff-session)        ; Ediff session data for code review (plist or nil)
 
 ;;; Agent creation
 
@@ -40,10 +78,14 @@ Does not launch the agent process yet."
      :name name
      :color color
      :task-description task-description
+     :working-directory default-directory
      :status 'pending
-     :created-at (current-time))))
+     :created-at (current-time)
+     :communication-backend 'polling
+     :mcp-enabled nil
+     :mcp-request-counter 0)))
 
-(defun claude-multi--assign-color (id)
+(defun claude-multi--assign-color (_id)
   "Assign a color to an agent based on its ID."
   (let ((colors claude-multi-agent-colors)
         (index (mod claude-multi--agent-id-counter (length claude-multi-agent-colors))))
@@ -73,6 +115,14 @@ Returns a plist with :name, :color, :text, :bg properties."
                              (getenv "KITTY_LISTEN_ON")
                              "unix:/tmp/kitty-claude")))
 
+        ;; Start WebSocket server if enabled and not already running
+        (when (and claude-multi-websocket-enabled
+                   (fboundp 'claude-multi-ws--start-server))
+          (let ((ws-port (claude-multi-ws--start-server)))
+            (when ws-port
+              (setf (claude-agent-communication-backend agent) 'websocket)
+              (setf (claude-agent-mcp-enabled agent) t))))
+
         ;; Calculate worktree path if branch name is specified
         ;; (Worktree will be created in kitty terminal, not here)
         (when (and (claude-multi--in-git-repo-p)
@@ -86,10 +136,16 @@ Returns a plist with :name, :color, :text, :bg properties."
 
         (let* ((use-worktree-p (and (claude-multi--in-git-repo-p)
                                    (claude-agent-branch-name agent)))
-               ;; If using worktree, start in repo root; otherwise use current directory
-               (starting-dir (if use-worktree-p
-                                (claude-multi--get-git-root)
-                              default-directory))
+               ;; Determine starting directory:
+               ;; 1. If using worktree: repo root (will cd to worktree later)
+               ;; 2. If worktree-path is set but no branch: use that directory directly
+               ;; 3. Otherwise: use agent's working-directory
+               (starting-dir (cond
+                              (use-worktree-p (claude-multi--get-git-root))
+                              ((claude-agent-worktree-path agent)
+                               (claude-agent-worktree-path agent))
+                              (t (or (claude-agent-working-directory agent)
+                                     default-directory))))
                ;; Check if session window still exists (might have been closed manually)
                (session-window-exists
                 (and claude-multi--current-session-window-id
@@ -113,13 +169,20 @@ Returns a plist with :name, :color, :text, :bg properties."
                (match-clause (if is-first-agent
                                  ""
                                (format " --match=id:%s" claude-multi--current-session-window-id)))
+               ;; Build environment variables for the agent
+               (env-clause (if (and claude-multi-websocket-enabled
+                                   (fboundp 'claude-multi-ws--get-port-env)
+                                   (claude-multi-ws--get-port-env))
+                              (format " --env=CLAUDE_WS_PORT=%s" (claude-multi-ws--get-port-env))
+                            ""))
                ;; Launch kitty and get window ID
                (launch-output
                 (shell-command-to-string
-                 (format "kitty @ --to=%s launch --type=%s%s --cwd=%s --title='%s'"
+                 (format "kitty @ --to=%s launch --type=%s%s%s --cwd=%s --title='%s'"
                         listen-addr
                         window-type
                         match-clause
+                        env-clause
                         (shell-quote-argument starting-dir)
                         session-name)))
                (window-id (string-trim launch-output)))
@@ -192,6 +255,9 @@ Returns a plist with :name, :color, :text, :bg properties."
           ;; Update progress buffer
           (claude-multi--add-agent-section agent)
 
+          ;; Update session statistics (agent counts)
+          (claude-multi--update-session-stats)
+
           ;; Start watching agent's status.md file
           (claude-multi--watch-agent-status-file agent)))
 
@@ -225,11 +291,24 @@ Returns a plist with :name, :color, :text, :bg properties."
     (setf (claude-agent-status-timer agent) timer)))
 
 (defun claude-multi--check-kitty-status (agent)
-  "Check basic status of AGENT's kitty window."
-  (unless (claude-multi--kitty-is-alive agent)
-    ;; Window closed - mark agent as completed
-    (when (cl-member (claude-agent-status agent) '(running waiting-input))
-      (claude-multi--handle-agent-completion agent))))
+  "Check basic status of AGENT's kitty window.
+Uses WebSocket if available, falls back to polling if configured."
+  (let ((backend (claude-agent-communication-backend agent))
+        (agent-id (claude-agent-id agent)))
+    ;; Check if WebSocket connection is active
+    (when (eq backend 'websocket)
+      (when (and (fboundp 'claude-multi-ws--is-connected)
+                 (not (claude-multi-ws--is-connected agent-id)))
+        ;; WebSocket disconnected - fall back to polling if enabled
+        (when claude-multi-websocket-fallback
+          (setf (claude-agent-communication-backend agent) 'polling)
+          (message "Agent %s: WebSocket disconnected, falling back to polling" agent-id))))
+
+    ;; Check if kitty window is still alive
+    (unless (claude-multi--kitty-is-alive agent)
+      ;; Window closed - mark agent as completed
+      (when (cl-member (claude-agent-status agent) '(running waiting-input))
+        (claude-multi--handle-agent-completion agent)))))
 
 (defun claude-multi--kitty-is-alive (agent)
   "Check if AGENT's kitty window still exists."
@@ -251,26 +330,23 @@ Returns a plist with :name, :color, :text, :bg properties."
   ;; Update progress buffer
   (claude-multi--update-agent-status agent)
 
-  ;; Cleanup worktree if configured
-  (when (and claude-multi-auto-cleanup
-             (claude-agent-worktree-path agent))
-    (claude-multi--delete-worktree agent))
-
   ;; Handle buffer cleanup
   (claude-multi--handle-buffer-cleanup agent))
 
 (defun claude-multi--handle-buffer-cleanup (agent)
   "Handle cleanup of AGENT's kitty window based on configuration."
-  (pcase claude-multi-buffer-cleanup
-    ('keep-all nil)  ; User manually closes kitty windows
-    ('auto-close-success
-     (when (eq (claude-agent-status agent) 'completed)
-       ;; Only cleanup worktree, leave kitty window for user to review
-       (when (claude-agent-worktree-path agent)
-         (claude-multi--delete-worktree agent))))
-    ('ask
-     (when (y-or-n-p (format "Close kitty window for %s? " (claude-agent-name agent)))
-       (claude-multi--kill-agent agent)))))
+  (let ((status (claude-agent-status agent)))
+    (pcase claude-multi-buffer-cleanup
+      ('keep-all
+       ;; User manually closes kitty windows - do nothing
+       nil)
+      ('auto-close-success
+       ;; Leave kitty window for user to review
+       (when (eq status 'completed)
+         nil))
+      ('ask
+       (when (y-or-n-p (format "Close kitty window for %s? " (claude-agent-name agent)))
+         (claude-multi--kill-agent agent))))))
 
 ;;; Agent interaction
 
@@ -279,32 +355,35 @@ Returns a plist with :name, :color, :text, :bg properties."
 
 ;;;###autoload
 (defun claude-multi--kill-agent (agent)
-  "Kill AGENT and cleanup all resources."
+  "Kill AGENT and cleanup all resources (worktree, status watch, progress buffer)."
   (when agent
+    ;; Mark agent as failed/killed and update status in progress buffer
+    (setf (claude-agent-status agent) 'failed)
+    (setf (claude-agent-completed-at agent) (current-time))
+    (claude-multi--update-agent-status agent)
+
     ;; Cancel status timer
     (when-let ((timer (claude-agent-status-timer agent)))
       (cancel-timer timer))
+
+    ;; Stop watching agent's status file
+    (claude-multi--stop-watching-agent-status agent)
 
     ;; Close kitty window
     (let* ((window-id (claude-agent-kitty-window-id agent))
            (listen-addr (or claude-multi-kitty-listen-address
                            (getenv "KITTY_LISTEN_ON")
                            "unix:/tmp/kitty-claude")))
-      (call-process-shell-command
-       (format "kitty @ --to=%s close-window --match=id:%s"
-              listen-addr window-id)
-       nil 0))
+      (when window-id
+        (call-process-shell-command
+         (format "kitty @ --to=%s close-window --match=id:%s 2>/dev/null"
+                listen-addr window-id)
+         nil 0)))
 
     ;; Cleanup context buffer
     (when-let ((buf (claude-agent-context-buffer agent)))
-      (kill-buffer buf))
-
-    ;; Cleanup worktree
-    (when (claude-agent-worktree-path agent)
-      (claude-multi--delete-worktree agent))
-
-    ;; Stop watching agent's status file
-    (claude-multi--stop-watching-agent-status agent)
+      (when (buffer-live-p buf)
+        (kill-buffer buf)))
 
     ;; Remove from agents list
     (setq claude-multi--agents
@@ -315,8 +394,8 @@ Returns a plist with :name, :color, :text, :bg properties."
       (setq claude-multi--current-session-window-id nil)
       (setq claude-multi--current-session-tab-ids nil))
 
-    ;; Update progress buffer
-    (claude-multi--remove-agent-section agent)))
+    ;; Update session stats after removal
+    (claude-multi--update-session-stats)))
 
 ;;; Agent listing and selection
 
@@ -357,14 +436,48 @@ Returns a plist with :name, :color, :text, :bg properties."
     (_ "❓ UNKNOWN")))
 
 (defun claude-multi--format-duration (start-time &optional end-time)
-  "Format duration between START-TIME and END-TIME (or current time)."
+  "Format duration between START-TIME and END-TIME (or current time).
+Returns a human-readable string with visual warnings for long-running agents."
   (let* ((end (or end-time (current-time)))
          (duration (time-subtract end start-time))
-         (seconds (time-to-seconds duration)))
+         (seconds (floor (time-to-seconds duration)))
+         (_minutes (/ seconds 60))
+         (hours (/ seconds 3600))
+         (_days (/ seconds 86400))
+         (_weeks (/ seconds 604800)))
     (cond
-     ((< seconds 60) (format "%.0fs" seconds))
-     ((< seconds 3600) (format "%.1fm" (/ seconds 60.0)))
-     (t (format "%.1fh" (/ seconds 3600.0))))))
+     ;; Less than 1 minute
+     ((< seconds 60)
+      (format "%ds" seconds))
+     ;; Less than 1 hour - show minutes and seconds
+     ((< seconds 3600)
+      (let ((m (/ seconds 60))
+            (s (mod seconds 60)))
+        (if (zerop s)
+            (format "%dm" m)
+          (format "%dm %ds" m s))))
+     ;; Less than 24 hours - show hours and minutes
+     ((< seconds 86400)
+      (let* ((h (/ seconds 3600))
+             (m (/ (mod seconds 3600) 60))
+             (warning (if (>= hours 4) "⚠️ " "")))
+        (if (zerop m)
+            (format "%s%dh" warning h)
+          (format "%s%dh %dm" warning h m))))
+     ;; Less than 7 days - show days and hours with red flag
+     ((< seconds 604800)
+      (let* ((d (/ seconds 86400))
+             (h (/ (mod seconds 86400) 3600)))
+        (if (zerop h)
+            (format "🔴 %dd" d)
+          (format "🔴 %dd %dh" d h))))
+     ;; 7 days or more - show weeks and days
+     (t
+      (let* ((w (/ seconds 604800))
+             (d (/ (mod seconds 604800) 86400)))
+        (if (zerop d)
+            (format "🔴 %dw" w)
+          (format "🔴 %dw %dd" w d)))))))
 
 (provide 'claude-multi-agents)
 ;;; agents.el ends here

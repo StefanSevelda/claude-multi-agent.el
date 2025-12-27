@@ -6,3 +6,4 @@
 (package! s)          ; String utilities
 (package! dash)       ; List utilities
 (package! buttercup)  ; BDD-style testing framework
+(package! websocket)  ; WebSocket communication for MCP protocol
