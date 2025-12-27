@@ -85,6 +85,41 @@ Available methods: popup, markdown, modeline, sound"
                  (const :tag "Ask before closing" ask))
   :group 'claude-multi)
 
+(defcustom claude-multi-websocket-enabled t
+  "Enable WebSocket communication for real-time agent interaction.
+When enabled, agents can communicate with Emacs via WebSocket for MCP protocol support."
+  :type 'boolean
+  :group 'claude-multi)
+
+(defcustom claude-multi-websocket-fallback t
+  "Fall back to polling if WebSocket connection is lost.
+When enabled, agents will automatically switch to polling-based monitoring
+if their WebSocket connection disconnects."
+  :type 'boolean
+  :group 'claude-multi)
+
+(defcustom claude-multi-websocket-port-range '(10000 65535)
+  "Port range for WebSocket server.
+Server will try to bind to an available port in this range."
+  :type '(list integer integer)
+  :group 'claude-multi)
+
+(defcustom claude-multi-session-directory
+  (expand-file-name "claude-multi-sessions" user-emacs-directory)
+  "Directory for storing session files."
+  :type 'directory
+  :group 'claude-multi)
+
+(defcustom claude-multi-session-autosave-interval 300
+  "Seconds between automatic session saves (0 to disable)."
+  :type 'integer
+  :group 'claude-multi)
+
+(defcustom claude-multi-session-retention-days 30
+  "Number of days to keep old sessions (0 for unlimited)."
+  :type 'integer
+  :group 'claude-multi)
+
 (defcustom claude-multi-agent-color-schemes
   '((1  :name "Bright Red"       :color "#FF4444" :text "#FFE5E5" :bg "#1a0808")
     (2  :name "Cyan"             :color "#00D9FF" :text "#E0F8FF" :bg "#081418")
@@ -181,7 +216,17 @@ Used for round-robin split placement or intelligent tab management.")
   (require 'claude-multi-agents)
   (require 'claude-multi-progress)
   (require 'claude-multi-worktree)
-  (require 'claude-multi-notifications))
+  (require 'claude-multi-notifications)
+  ;; WebSocket support (optional - only loads if websocket package available)
+  (when (and claude-multi-websocket-enabled
+             (require 'websocket nil t))
+    (require 'claude-multi-websocket))
+  ;; MCP Protocol
+  (require 'claude-multi-mcp)
+  ;; Ediff Integration
+  (require 'claude-multi-ediff)
+  ;; Session persistence
+  (require 'claude-multi-session))
 
 ;; Interactive commands
 
@@ -444,7 +489,16 @@ ACTION-FN is called with point at the beginning of each headline."
           :desc "Kill agent"              "k" #'claude-multi/kill-agent
           :desc "Kill all"                "K" #'claude-multi/kill-all-agents
           :desc "Export progress"         "e" #'claude-multi/export-progress
-          :desc "List worktrees"          "l" #'claude-multi/list-worktrees)))
+          :desc "List worktrees"          "l" #'claude-multi/list-worktrees
+          :desc "Save session"            "S" #'claude-multi/save-session
+          :desc "Restore session"         "R" #'claude-multi/restore-session
+          :desc "List sessions"           "L" #'claude-multi/list-sessions
+          :desc "Delete session"          "D" #'claude-multi/delete-session
+          (:prefix ("r" . "review")
+           :desc "Review agent changes"   "r" #'claude-multi/review-agent-changes
+           :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
+           :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
+           :desc "Next diff file"         "n" #'claude-multi/next-diff-file))))
 
 (message ">>> CLAUDE-MULTI: Finished loading config.el successfully")
 

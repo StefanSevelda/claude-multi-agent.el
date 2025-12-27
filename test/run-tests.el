@@ -21,6 +21,8 @@
                         (file-name-directory load-file-name)))
 (load (expand-file-name "test-progress-visibility.el"
                         (file-name-directory load-file-name)))
+(load (expand-file-name "mcp-test.el"
+                        (file-name-directory load-file-name)))
 
 ;; Run tests
 (buttercup-run)

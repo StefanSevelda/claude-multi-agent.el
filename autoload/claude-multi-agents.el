@@ -21,6 +21,9 @@
 (declare-function claude-multi--in-git-repo-p "claude-multi-worktree")
 (declare-function claude-multi--get-git-root "claude-multi-worktree")
 (declare-function claude-multi--determine-worktree-path "claude-multi-worktree")
+(declare-function claude-multi-ws--start-server "claude-multi-websocket")
+(declare-function claude-multi-ws--get-port-env "claude-multi-websocket")
+(declare-function claude-multi-ws--is-connected "claude-multi-websocket")
 
 ;; Forward declarations for variables defined in config.el
 (defvar claude-multi--agent-id-counter)
@@ -33,6 +36,8 @@
 (defvar claude-multi-claude-command)
 (defvar claude-multi-buffer-cleanup)
 (defvar claude-multi--agents)
+(defvar claude-multi-websocket-enabled)
+(defvar claude-multi-websocket-fallback)
 
 ;;; Agent structure
 
@@ -51,7 +56,13 @@
   status                ; Agent status symbol: running, waiting-input, completed, failed
   task-description      ; Original task description (string)
   created-at            ; Timestamp when created
-  completed-at)         ; Timestamp when finished (or nil)
+  completed-at          ; Timestamp when finished (or nil)
+  websocket-connection  ; WebSocket connection object (or nil)
+  communication-backend ; Communication backend type: 'websocket or 'polling
+  mcp-enabled           ; Whether MCP protocol is enabled for this agent (boolean)
+  session-id            ; Session identifier for persistence (string or nil)
+  mcp-request-counter   ; Counter for MCP request IDs (integer)
+  ediff-session)        ; Ediff session data for code review (plist or nil)
 
 ;;; Agent creation
 
@@ -69,7 +80,10 @@ Does not launch the agent process yet."
      :task-description task-description
      :working-directory default-directory
      :status 'pending
-     :created-at (current-time))))
+     :created-at (current-time)
+     :communication-backend 'polling
+     :mcp-enabled nil
+     :mcp-request-counter 0)))
 
 (defun claude-multi--assign-color (_id)
   "Assign a color to an agent based on its ID."
@@ -100,6 +114,14 @@ Returns a plist with :name, :color, :text, :bg properties."
              (listen-addr (or claude-multi-kitty-listen-address
                              (getenv "KITTY_LISTEN_ON")
                              "unix:/tmp/kitty-claude")))
+
+        ;; Start WebSocket server if enabled and not already running
+        (when (and claude-multi-websocket-enabled
+                   (fboundp 'claude-multi-ws--start-server))
+          (let ((ws-port (claude-multi-ws--start-server)))
+            (when ws-port
+              (setf (claude-agent-communication-backend agent) 'websocket)
+              (setf (claude-agent-mcp-enabled agent) t))))
 
         ;; Calculate worktree path if branch name is specified
         ;; (Worktree will be created in kitty terminal, not here)
@@ -147,13 +169,20 @@ Returns a plist with :name, :color, :text, :bg properties."
                (match-clause (if is-first-agent
                                  ""
                                (format " --match=id:%s" claude-multi--current-session-window-id)))
+               ;; Build environment variables for the agent
+               (env-clause (if (and claude-multi-websocket-enabled
+                                   (fboundp 'claude-multi-ws--get-port-env)
+                                   (claude-multi-ws--get-port-env))
+                              (format " --env=CLAUDE_WS_PORT=%s" (claude-multi-ws--get-port-env))
+                            ""))
                ;; Launch kitty and get window ID
                (launch-output
                 (shell-command-to-string
-                 (format "kitty @ --to=%s launch --type=%s%s --cwd=%s --title='%s'"
+                 (format "kitty @ --to=%s launch --type=%s%s%s --cwd=%s --title='%s'"
                         listen-addr
                         window-type
                         match-clause
+                        env-clause
                         (shell-quote-argument starting-dir)
                         session-name)))
                (window-id (string-trim launch-output)))
@@ -262,11 +291,24 @@ Returns a plist with :name, :color, :text, :bg properties."
     (setf (claude-agent-status-timer agent) timer)))
 
 (defun claude-multi--check-kitty-status (agent)
-  "Check basic status of AGENT's kitty window."
-  (unless (claude-multi--kitty-is-alive agent)
-    ;; Window closed - mark agent as completed
-    (when (cl-member (claude-agent-status agent) '(running waiting-input))
-      (claude-multi--handle-agent-completion agent))))
+  "Check basic status of AGENT's kitty window.
+Uses WebSocket if available, falls back to polling if configured."
+  (let ((backend (claude-agent-communication-backend agent))
+        (agent-id (claude-agent-id agent)))
+    ;; Check if WebSocket connection is active
+    (when (eq backend 'websocket)
+      (when (and (fboundp 'claude-multi-ws--is-connected)
+                 (not (claude-multi-ws--is-connected agent-id)))
+        ;; WebSocket disconnected - fall back to polling if enabled
+        (when claude-multi-websocket-fallback
+          (setf (claude-agent-communication-backend agent) 'polling)
+          (message "Agent %s: WebSocket disconnected, falling back to polling" agent-id))))
+
+    ;; Check if kitty window is still alive
+    (unless (claude-multi--kitty-is-alive agent)
+      ;; Window closed - mark agent as completed
+      (when (cl-member (claude-agent-status agent) '(running waiting-input))
+        (claude-multi--handle-agent-completion agent)))))
 
 (defun claude-multi--kitty-is-alive (agent)
   "Check if AGENT's kitty window still exists."
