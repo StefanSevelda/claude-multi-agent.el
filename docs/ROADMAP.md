@@ -12,29 +12,32 @@ The claude-multi-agent.el plugin enables parallel execution of multiple Claude C
 
 Core features that improve real-time communication and status visibility between Emacs and Claude agents.
 
-### - [ ] Bidirectional Emacs-Kitty Communication
+### - [x] File-Based Status Communication (IMPLEMENTED)
 
-**Description**: Enable two-way communication between Emacs and Claude terminals in kitty.
+**Description**: Enable real-time status updates from Claude agents to Emacs using file-notify (inotify/kqueue).
 
 **Benefits**:
 
-- Send commands and prompts from Emacs to running agents
-- Capture output from kitty terminals back to Emacs
-- Enable automated responses to agent questions
+- Real-time status updates without polling
+- Per-session status files prevent conflicts with multiple agents
+- Rich status data: context window, git info, waiting state, current activity
 
-**Implementation Notes**:
+**Implementation**:
 
-- Leverage kitty's remote control API for sending commands (`kitty @ send-text`)
-- Use websockets as event mechanism to sync Emacs and Claude Code
-- Implement websocket server in Emacs to receive events from Claude terminals
-- Create Emacs functions to read agent output in real-time
-- Implement message queue for coordinating commands
-- Reference implementation: [monet](https://github.com/stevemolitor/monet) - Communication framework between Emacs and Claude Code
+- Claude hooks write session-specific JSON to `/tmp/claude-status/status-{session_id}.json`
+- Emacs uses `file-notify-add-watch` to detect changes
+- Status includes: claude_status (running/waiting/finished), context_window %, git branch, current activity
+- Atomic writes (temp file + rename) prevent partial reads
+- Stop hook detects when Claude finishes work
 
-**Dependencies**: None (foundational feature)
+**Files**:
+- `~/.claude/hooks/status-summary.py` - PostToolUse hook writes status JSON
+- `~/.claude/hooks/status-stop.py` - Stop hook marks session finished
+- `autoload/claude-multi-status.el` - File-notify watcher and status processing
 
-**References**:
-- [monet](https://github.com/stevemolitor/monet) - Websocket-based communication between Emacs and Claude Code
+**Configuration**:
+- Status files: `/tmp/claude-status/status-{session_id}.json`
+- State files: `/tmp/claude-status-hooks/session-{session_id}.json`
 
 ---
 
@@ -83,7 +86,7 @@ Core features that improve real-time communication and status visibility between
 
 ---
 
-### - [ ] Context Window Percentage Display
+### - [x] Context Window Percentage Display (IMPLEMENTED)
 
 **Description**: Show current Claude context window usage percentage for each agent.
 
@@ -91,17 +94,16 @@ Core features that improve real-time communication and status visibility between
 
 - Monitor when agents approach context limits
 - Proactively manage long-running conversations
-- Warning indicators when approaching 80%+ usage
+- Warning indicators when approaching 95%+ usage (compaction threshold)
 
-**Implementation Notes**:
+**Implementation**:
 
-- Parse Claude output for context window stats (if exposed in CLI)
-- Alternative: Track approximate token count based on captured output
-- Display percentage in agent status section of progress buffer
-- Add visual warning (red) when > 80% full
-- Implement periodic polling (every status check cycle)
+- Claude Code provides context_window data to hooks via stdin JSON
+- Status file includes: tokens_used, tokens_total, percentage_used
+- Session buffer displays: `TOKENS: 55938/200000 (27.9%)`
+- `compaction_warning` flag set when >= 95% (auto-compaction threshold)
 
-**Dependencies**: Requires bidirectional communication to capture output
+**Dependencies**: File-based status communication (implemented)
 
 ---
 
@@ -131,7 +133,7 @@ Core features that improve real-time communication and status visibility between
 
 Features that improve code review workflow and visibility into agent changes.
 
-### - [ ] Session-Based Kitty Window Organization
+### - [x] Session-Based Kitty Window Organization (IMPLEMENTED)
 
 **Description**: Open a dedicated kitty OS window for each session, with all session agents organized as tabs or splits within that window.
 
@@ -143,28 +145,23 @@ Features that improve code review workflow and visibility into agent changes.
 - Clear separation between unrelated work
 - Better multi-monitor workflow support
 
-**Implementation Notes**:
+**Implementation**:
 
-- When first agent of a session is created:
-  - Launch new kitty OS window (`kitty @ launch --type=os-window`)
-  - Store OS window ID in session metadata
-  - Tag window with session name/ID
-- For subsequent agents in same session:
-  - Check if user prefers tabs or splits (configurable)
-  - If tabs: Launch as new tab in session window (`kitty @ launch --type=tab --match=id:WINDOW_ID`)
-  - If splits: Launch as split within current tab (`kitty @ launch --type=window --match=id:TAB_ID`)
-- Track session-to-window mapping in `claude-multi--sessions` hash table
-- Add session cleanup to close entire OS window when all agents complete
+- First agent creates new kitty OS window (`kitty @ launch --type=os-window`)
+- Session window ID stored in `claude-multi--current-session-window-id`
+- Subsequent agents spawn as tabs or splits within session window
+- Agent color schemes provide visual distinction (10 color schemes)
+- Tab colors, terminal colors, cursor colors all match agent's scheme
+- Session cleanup closes entire OS window when all agents killed
 
 **Configuration Variables**:
 
 ```elisp
-claude-multi-session-window-mode    - 'dedicated-window, 'shared, or 'individual (default: 'dedicated-window)
 claude-multi-agent-spawn-type       - 'tab or 'split (default: 'tab)
-claude-multi-max-splits-per-tab     - Number (default: 4, max splits before new tab)
+claude-multi-agent-color-schemes    - List of 10 color schemes
 ```
 
-**Dependencies**: None (builds on existing kitty integration)
+**Dependencies**: None (implemented)
 
 ---
 
@@ -334,13 +331,14 @@ claude-multi-cleanup-on-finish       - Boolean (default: t)
 
 Suggested implementation order based on feature dependencies:
 
-1. **High Priority - Foundation**
-   - Bidirectional Emacs-Kitty communication (enables many other features)
+1. **COMPLETED - Foundation**
+   - ✅ File-based status communication (inotify/file-notify)
+   - ✅ Session-based kitty window organization
+   - ✅ Context window percentage display
    - Agent "Killed" status tracking (quick win, no dependencies)
 
 2. **Medium Priority - Monitoring**
-   - Visual "waiting for input" status indicator
-   - Context window percentage display
+   - Visual "waiting for input" status indicator (partially implemented via status file)
    - Claude mode tracking
 
 3. **Medium Priority - Developer Experience**
