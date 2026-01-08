@@ -19,8 +19,13 @@
 (declare-function claude-agent-id "claude-multi-agents")
 (declare-function claude-agent-status "claude-multi-agents")
 (declare-function claude-agent-working-directory "claude-multi-agents")
+(declare-function claude-agent-ediff-session "claude-multi-agents")
 (declare-function claude-multi-session--save "claude-multi-session")
 (declare-function claude-multi-session--list-sessions "claude-multi-session")
+(declare-function claude-multi-ediff--create-session "claude-multi-ediff")
+(declare-function claude-multi-ediff--get-changed-files "claude-multi-ediff")
+(declare-function claude-multi-ediff--show-diff "claude-multi-ediff")
+(declare-function claude-multi-ediff--set-mcp-request-id "claude-multi-ediff")
 (declare-function flycheck-error-line "flycheck")
 (declare-function flycheck-error-column "flycheck")
 (declare-function flycheck-error-message "flycheck")
@@ -227,10 +232,14 @@ Callback signature: (lambda (result) ...) where result is an alist."
 
 (defun claude-multi-mcp--tool-diff-request (agent-id params)
   "Request interactive diff review (deferred response).
-PARAMS: ((file . \"path\") (description . \"...\"))."
+PARAMS: ((file . \"path\") (description . \"...\") (request-id . \"...\"))."
   (let* ((request-id (cdr (assoc 'request-id params)))
          (file (cdr (assoc 'file params)))
-         (_description (or (cdr (assoc 'description params)) "Review changes")))
+         (_description (or (cdr (assoc 'description params)) "Review changes"))
+         (agent (claude-multi--get-agent-by-id agent-id)))
+
+    (unless agent
+      (error "Agent not found: %s" agent-id))
 
     ;; Store callback for later completion
     (claude-multi-mcp--defer-response
@@ -239,9 +248,32 @@ PARAMS: ((file . \"path\") (description . \"...\"))."
      (lambda (result)
        (message "Diff review completed for %s: %s" agent-id result)))
 
-    ;; TODO: Integrate with ediff when Agent 3 is implemented
-    ;; For now, just store the request
-    (message "Diff review requested by %s for file: %s" agent-id file)
+    ;; Launch ediff review
+    (if file
+        ;; Single file review
+        (progn
+          (unless (claude-agent-ediff-session agent)
+            (claude-multi-ediff--create-session agent (list file)))
+          (claude-multi-ediff--set-mcp-request-id agent request-id)
+          (claude-multi-ediff--show-diff agent file))
+      ;; No file specified - review all changed files
+      (let ((changed-files (claude-multi-ediff--get-changed-files agent)))
+        (if (null changed-files)
+            (progn
+              ;; No changes - complete immediately
+              (claude-multi-mcp--complete-deferred-response
+               agent-id request-id
+               '((status . "no_changes")
+                 (accepted . [])
+                 (rejected . [])))
+              'deferred)
+          ;; Create session and start review
+          (claude-multi-ediff--create-session agent changed-files)
+          (claude-multi-ediff--set-mcp-request-id agent request-id)
+          (let* ((session (claude-agent-ediff-session agent))
+                 (first-file (car changed-files)))
+            (plist-put session :files-to-review (cdr changed-files))
+            (claude-multi-ediff--show-diff agent first-file)))))
 
     ;; Return deferred marker
     'deferred))
