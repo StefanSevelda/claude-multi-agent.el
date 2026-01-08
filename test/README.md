@@ -33,12 +33,59 @@ make test
 
 ## Test Files
 
-- `test-vterm-integration.el` - Tests for `vterm` buffer management and process integration
+- `test-kitty-integration.el` - Tests for kitty terminal integration
+- `test-progress-visibility.el` - Tests for STATUS drawer visibility features
 - `run-tests.el` - Test runner script that loads all test files
 
 ## Test Coverage
 
-### `vterm` Integration Tests
+### Kitty Integration Tests
+
+1. **Window Management**
+   - Verifies `claude-multi--launch-agent` creates kitty windows correctly
+   - Tests kitty remote control API integration
+   - Verifies window ID tracking
+
+2. **Command Sending**
+   - Tests `claude-multi--send-to-kitty` for sending initial commands
+   - Verifies proper command escaping
+
+3. **Status Monitoring**
+   - Tests `claude-multi--kitty-is-alive` for window existence checks
+   - Verifies status monitoring timer setup
+   - Tests agent completion detection
+
+4. **Agent Cleanup**
+   - Tests `claude-multi--kill-agent` for proper resource cleanup
+   - Verifies kitty window closing
+   - Tests timer cancellation
+
+### Progress Visibility Tests
+
+1. **STATUS Drawer Creation**
+   - Verifies `claude-multi--add-agent-section` creates visible drawers
+   - Tests drawer structure (`:STATUS:`, marker, `:END:`)
+   - Verifies agent ID color formatting in headlines
+   - Tests status icon display
+
+2. **Status Updates**
+   - Tests `claude-multi--update-agent-status-display` for content updates
+   - Verifies auto-expansion when waiting for input
+   - Tests handling of missing status.json files
+   - Verifies parsed JSON content insertion
+
+3. **Toggle Commands**
+   - Tests `claude-multi/show-all-status-drawers` for showing all drawers
+   - Tests `claude-multi/hide-all-status-drawers` for hiding all drawers
+   - Tests `claude-multi/toggle-all-status-drawers` for toggling visibility
+   - Verifies graceful handling of missing progress buffer
+
+4. **Status File Watching**
+   - Tests `claude-multi--watch-agent-status-file` for file watch setup
+   - Verifies directory watching when status.json doesn't exist
+   - Tests watch upgrade from directory to file
+
+### Legacy `vterm` Integration Tests
 
 1. **Command Sending**
    - Verifies `claude-multi--send-to-vterm` correctly sends commands

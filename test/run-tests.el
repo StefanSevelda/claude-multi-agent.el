@@ -6,12 +6,22 @@
 
 ;;; Code:
 
-;; Load test helper (sets up dependencies)
-(load (expand-file-name "test-helper.el"
-                        (file-name-directory load-file-name)))
+;; Add parent directory to load path
+(let ((project-root (file-name-directory
+                     (directory-file-name
+                      (file-name-directory load-file-name)))))
+  (add-to-list 'load-path project-root)
+  (add-to-list 'load-path (expand-file-name "autoload" project-root)))
+
+;; Load dependencies
+(require 'buttercup)
 
 ;; Load test files
 (load (expand-file-name "test-kitty-integration.el"
+                        (file-name-directory load-file-name)))
+(load (expand-file-name "test-progress-visibility.el"
+                        (file-name-directory load-file-name)))
+(load (expand-file-name "mcp-test.el"
                         (file-name-directory load-file-name)))
 
 ;; Run tests

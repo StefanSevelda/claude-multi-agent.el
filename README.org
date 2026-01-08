@@ -6,8 +6,15 @@
 
 An Emacs plugin for managing multiple [[https://github.com/anthropics/claude-code][claude-code]] instances in parallel with automatic git worktree isolation and centralized org-mode progress tracking.
 
-[[https://github.com/yourusername/claude-multi-agent.el/actions][https://github.com/yourusername/claude-multi-agent.el/workflows/Tests/badge.svg]]
-[[https://github.com/yourusername/claude-multi-agent.el/blob/main/LICENSE][https://img.shields.io/badge/license-MIT-blue.svg]]
+[[https://github.com/StefanSevelda/claude-multi-agent.el/actions][https://github.com/StefanSevelda/claude-multi-agent.el/workflows/Tests/badge.svg]]
+[[https://github.com/StefanSevelda/claude-multi-agent.el/blob/main/LICENSE][https://img.shields.io/badge/license-MIT-blue.svg]]
+
+** Build Status
+
+| Branch | Status | Tests |
+|--------|--------|-------|
+| [[https://github.com/StefanSevelda/claude-multi-agent.el/tree/main][main]] | [[https://github.com/StefanSevelda/claude-multi-agent.el/actions?query=branch%3Amain][https://github.com/StefanSevelda/claude-multi-agent.el/workflows/Tests/badge.svg?branch=main]] | 29 passing |
+| [[https://github.com/StefanSevelda/claude-multi-agent.el/tree/improve-session][improve-session]] | [[https://github.com/StefanSevelda/claude-multi-agent.el/actions?query=branch%3Aimprove-session][https://github.com/StefanSevelda/claude-multi-agent.el/workflows/Tests/badge.svg?branch=improve-session]] | 29 passing |
 
 ** Features
 
@@ -216,18 +223,55 @@ Monitor Output (eshell-output-filter-functions)
 
 ** Development
 
+*** Testing
+
+The project includes a comprehensive test suite using [[https://github.com/jorgenschaefer/emacs-buttercup][Buttercup]] (BDD-style testing framework).
+
+**** Running Tests
+
+#+begin_src shell
+# Install test dependencies (first time only)
+make install-test-deps
+
+# Run all tests
+make test
+
+# Clean up dependencies
+make clean
+#+end_src
+
+**** Test Coverage
+
+The test suite includes 29 tests across three categories:
+
+- *7 smoke tests* - Basic functionality verification
+- *7 kitty integration tests* - Terminal management and agent lifecycle
+- *15 drawer core logic tests* - Progress buffer and visibility controls
+
+All tests run in <300ms without hanging, thanks to the separation of core logic from display functions.
+
+**** Continuous Integration
+
+Tests run automatically on GitHub Actions for every push to =main=, =develop=, and =improve-session= branches, testing against Emacs 27.2, 28.2, and 29.1.
+
 *** Building
 
 #+begin_src shell
-make compile      # Byte-compile all files
-make test         # Run tests (when implemented)
-make clean        # Remove compiled files
-make lint         # Check syntax and style
+make compile           # Byte-compile all files
+make test              # Run all tests
+make install-test-deps # Install test dependencies (Buttercup, etc.)
+make clean             # Remove compiled files and test dependencies
+make lint              # Check syntax and style
 #+end_src
 
-*** Running Tests
+*** Test Files
 
-Tests are located in =test/= directory using ERT (Emacs Regression Testing).
+Tests are located in the =test/= directory:
+
+- =test/test-simple.el= - Basic smoke tests
+- =test/test-kitty-integration.el= - Kitty terminal integration
+- =test/test-drawer-core-logic.el= - Progress buffer drawer visibility
+- =test/test-helper.el= - Test utilities and mocks
 
 #+begin_src shell
 make test

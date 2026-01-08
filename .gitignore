@@ -9,6 +9,7 @@
 # Test artifacts
 test/*.elc
 .ert-runner/
+.test-deps/
 
 # OS files
 .DS_Store

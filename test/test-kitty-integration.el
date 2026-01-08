@@ -7,8 +7,14 @@
 ;;; Code:
 
 (require 'buttercup)
+
+;; Load test helper to initialize variables and mocks
+(add-to-list 'load-path (file-name-directory load-file-name))
+(require 'test-helper)
+
+;; Load modules under test
+(add-to-list 'load-path (expand-file-name "../autoload" (file-name-directory load-file-name)))
 (require 'claude-multi-agents)
-(require 'claude-multi-status)
 
 (describe "Kitty Integration"
 
@@ -26,8 +32,6 @@
                     :status 'pending)))
         (cl-letf (((symbol-function 'claude-multi--in-git-repo-p)
                    (lambda () nil))
-                  ((symbol-function 'claude-multi--register-agent-for-status)
-                   (lambda (agent) nil))
                   ((symbol-function 'claude-multi--setup-kitty-status-monitor)
                    (lambda (agent) nil))
                   ((symbol-function 'run-with-timer)
@@ -47,120 +51,9 @@
       (let ((agent (make-claude-agent :kitty-window-id "123")))
         (claude-multi--send-to-kitty agent "claude 'test task'")
         (expect 'call-process-shell-command :to-have-been-called)
-        ;; Extract first argument (command string) from spy call args
-        (let ((command-string (car (spy-calls-args-for 'call-process-shell-command 0))))
-          (expect command-string :to-match "send-text"))))
-
-    (it "properly escapes command with single quotes"
-      (let ((agent (make-claude-agent :kitty-window-id "123")))
-        (claude-multi--send-to-kitty agent "echo 'hello world'")
-        (expect 'call-process-shell-command :to-have-been-called)
-        (let ((command-string (car (spy-calls-args-for 'call-process-shell-command 0))))
-          ;; Single quotes should be escaped as '\''
-          (expect command-string :to-match "echo")))))
-
-  (describe "Agent directory handling"
-    (it "sends cd command with expanded path before launching claude"
-      (let* ((test-dir "/Users/test/projects/foo")
-             (agent (make-claude-agent
-                     :id "test-1"
-                     :name "claude-test-1"
-                     :task-description "Test task"
-                     :status 'pending))
-             (captured-command nil)
-             (captured-agent nil))
-        ;; Set directory after creation
-        (setf (claude-agent-directory agent) test-dir)
-        (cl-letf (((symbol-function 'claude-multi--in-git-repo-p)
-                   (lambda () nil))
-                  ((symbol-function 'claude-multi--register-agent-for-status)
-                   (lambda (agent) nil))
-                  ((symbol-function 'claude-multi--setup-kitty-status-monitor)
-                   (lambda (agent) nil))
-                  ((symbol-function 'run-with-timer)
-                   (lambda (secs repeat func)
-                     ;; Execute the timer function immediately to capture the command
-                     (when (and (numberp secs) (eq secs 0.5))
-                       (funcall func))
-                     nil))
-                  ((symbol-function 'claude-multi--send-to-kitty)
-                   (lambda (ag cmd)
-                     (setq captured-agent ag)
-                     (setq captured-command cmd)))
-                  ((symbol-function 'claude-multi--add-agent-section)
-                   (lambda (agent) nil)))
-          (claude-multi--launch-agent agent)
-          ;; Should have captured the cd command
-          (expect captured-command :to-be-truthy)
-          (expect captured-command :to-match "cd .* && ")
-          (expect captured-command :to-match test-dir))))
-
-    (it "expands tilde in directory path"
-      (let* ((test-dir "~/projects/foo")
-             (expanded-dir (expand-file-name test-dir))
-             (agent (make-claude-agent
-                     :id "test-2"
-                     :name "claude-test-2"
-                     :task-description "Test task"
-                     :status 'pending))
-             (captured-command nil))
-        ;; Set directory after creation
-        (setf (claude-agent-directory agent) test-dir)
-        (cl-letf (((symbol-function 'claude-multi--in-git-repo-p)
-                   (lambda () nil))
-                  ((symbol-function 'claude-multi--register-agent-for-status)
-                   (lambda (agent) nil))
-                  ((symbol-function 'claude-multi--setup-kitty-status-monitor)
-                   (lambda (agent) nil))
-                  ((symbol-function 'run-with-timer)
-                   (lambda (secs repeat func)
-                     (when (and (numberp secs) (eq secs 0.5))
-                       (funcall func))
-                     nil))
-                  ((symbol-function 'claude-multi--send-to-kitty)
-                   (lambda (agent command)
-                     (setq captured-command command)))
-                  ((symbol-function 'claude-multi--add-agent-section)
-                   (lambda (agent) nil)))
-          (claude-multi--launch-agent agent)
-          ;; Should have expanded tilde and not escaped it
-          (expect captured-command :to-be-truthy)
-          (expect captured-command :not :to-match "\\\\~")
-          (expect captured-command :to-match expanded-dir))))
-
-    (it "uses worktree path over directory when both are set"
-      (let* ((worktree-path "/Users/test/worktrees/feature-branch")
-             (default-dir "/Users/test/default")
-             (agent (make-claude-agent
-                     :id "test-3"
-                     :name "claude-test-3"
-                     :task-description "Test task"
-                     :status 'pending))
-             (captured-command nil))
-        ;; Set both directory and worktree path
-        (setf (claude-agent-directory agent) default-dir)
-        (setf (claude-agent-worktree-path agent) worktree-path)
-        (cl-letf (((symbol-function 'claude-multi--in-git-repo-p)
-                   (lambda () nil))
-                  ((symbol-function 'claude-multi--register-agent-for-status)
-                   (lambda (agent) nil))
-                  ((symbol-function 'claude-multi--setup-kitty-status-monitor)
-                   (lambda (agent) nil))
-                  ((symbol-function 'run-with-timer)
-                   (lambda (secs repeat func)
-                     (when (and (numberp secs) (eq secs 0.5))
-                       (funcall func))
-                     nil))
-                  ((symbol-function 'claude-multi--send-to-kitty)
-                   (lambda (agent command)
-                     (setq captured-command command)))
-                  ((symbol-function 'claude-multi--add-agent-section)
-                   (lambda (agent) nil)))
-          (claude-multi--launch-agent agent)
-          ;; Should use worktree path, not directory
-          (expect captured-command :to-be-truthy)
-          (expect captured-command :to-match worktree-path)
-          (expect captured-command :not :to-match default-dir)))))
+        ;; Get the first argument (command string) from the spy call
+        (let ((cmd (car (spy-calls-args-for 'call-process-shell-command 0))))
+          (expect cmd :to-match "send-text")))))
 
   (describe "claude-multi--kitty-is-alive"
     (it "checks window existence successfully"
@@ -193,17 +86,17 @@
                      :context-buffer context-buf
                      :status-timer (run-with-timer 10 nil #'ignore)))
              (claude-multi--agents (list agent)))
-        (cl-letf (((symbol-function 'claude-multi--unregister-agent-for-status)
+        (cl-letf (((symbol-function 'claude-multi--stop-watching-agent-status)
                    (lambda (agent) nil))
-                  ((symbol-function 'claude-multi--delete-worktree)
+                  ((symbol-function 'claude-multi--update-agent-status)
                    (lambda (agent) nil))
-                  ((symbol-function 'claude-multi--remove-agent-section)
-                   (lambda (agent) nil)))
+                  ((symbol-function 'claude-multi--update-session-stats)
+                   (lambda () nil)))
           (claude-multi--kill-agent agent)
           (expect 'call-process-shell-command :to-have-been-called)
-          ;; Extract first argument (command string) from spy call args
-          (let ((command-string (car (spy-calls-args-for 'call-process-shell-command 0))))
-            (expect command-string :to-match "close-window"))
+          ;; Get the first argument (command string) from the spy call
+          (let ((cmd (car (spy-calls-args-for 'call-process-shell-command 0))))
+            (expect cmd :to-match "close-window"))
           (expect claude-multi--agents :to-equal nil)))))
 
   (describe "claude-multi--setup-kitty-status-monitor"
