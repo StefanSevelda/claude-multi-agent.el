@@ -1,4 +1,4 @@
-.PHONY: all test compile clean install install-test-deps help
+.PHONY: all test compile clean install install-test-deps install-hooks help
 
 # Emacs command
 EMACS ?= emacs
@@ -27,6 +27,7 @@ help:
 	@echo "  make test              - Run all tests (installs deps if needed)"
 	@echo "  make clean             - Remove compiled files and test dependencies"
 	@echo "  make install           - Install via symlink to Doom modules"
+	@echo "  make install-hooks     - Install Claude hooks for status tracking"
 	@echo "  make uninstall         - Remove symlink from Doom modules"
 	@echo "  make all               - Compile and test"
 
@@ -106,6 +107,10 @@ install:
 	@echo "  1. Add 'claude-multi' to the :tools section in ~/.config/emacs/.doom.d/init.el"
 	@echo "  2. Run 'doom sync' to install dependencies"
 	@echo "  3. Restart Emacs"
+
+install-hooks:
+	@echo "Installing Claude hooks for status tracking..."
+	@./install-hooks.sh
 
 uninstall:
 	@echo "Uninstalling claude-multi-agent.el from Doom Emacs..."
