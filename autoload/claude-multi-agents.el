@@ -21,10 +21,13 @@
   status-timer          ; Timer for polling kitty status
   worktree-path         ; Git worktree path (string or nil)
   branch-name           ; Git branch name for worktree (string or nil)
+  directory             ; Working directory if no worktree (string or nil)
   status                ; Agent status symbol: running, waiting-input, completed, failed
   task-description      ; Original task description (string)
   created-at            ; Timestamp when created
-  completed-at)         ; Timestamp when finished (or nil)
+  completed-at          ; Timestamp when finished (or nil)
+  session-id            ; Claude session ID from status file (string or nil)
+  last-status-data)     ; Last parsed status data from file (alist or nil)
 
 ;;; Agent creation
 
@@ -159,16 +162,27 @@ Returns a plist with :name, :color, :text, :bg properties."
             (insert (format "Started: %s\n\n" (format-time-string "%Y-%m-%d %H:%M:%S")))
             (org-mode))
 
-          ;; Start lightweight status monitoring
+          ;; Store the working directory for status file matching
+          (setf (claude-agent-directory agent) worktree-path)
+
+          ;; Register for file-based status updates
+          (claude-multi--register-agent-for-status agent)
+
+          ;; Start kitty alive check as backup (less frequent)
           (claude-multi--setup-kitty-status-monitor agent)
 
           ;; Send initial command after delay
           (run-with-timer 0.5 nil
                          (lambda ()
-                           (claude-multi--send-to-kitty
-                            agent
-                            ;; Just start claude26 without arguments
-                            claude-multi-claude-command)))
+                           ;; First cd to the directory, then run claude
+                           (let ((dir (or (claude-agent-worktree-path agent)
+                                          (claude-agent-directory agent))))
+                             (when dir
+                               (claude-multi--send-to-kitty
+                                agent
+                                (format "cd %s && %s"
+                                        (shell-quote-argument (expand-file-name dir))
+                                        claude-multi-claude-command))))))
 
           ;; Update progress buffer
           (claude-multi--add-agent-section agent)))
@@ -185,7 +199,8 @@ Returns a plist with :name, :color, :text, :bg properties."
          (listen-addr (or claude-multi-kitty-listen-address
                          (getenv "KITTY_LISTEN_ON")
                          "unix:/tmp/kitty-claude"))
-         (escaped-cmd (replace-regexp-in-string "'" "'\\''" command)))
+         ;; Escape single quotes by replacing ' with '\'' (close quote, escaped quote, open quote)
+         (escaped-cmd (replace-regexp-in-string "'" "'\\\\''" command)))
     (call-process-shell-command
      (format "kitty @ --to=%s send-text --match=id:%s '%s\n'"
             listen-addr window-id escaped-cmd)
@@ -194,10 +209,11 @@ Returns a plist with :name, :color, :text, :bg properties."
 ;;; Agent monitoring
 
 (defun claude-multi--setup-kitty-status-monitor (agent)
-  "Setup lightweight status monitoring for AGENT's kitty window."
+  "Setup kitty alive check as backup for AGENT's status.
+Primary status updates come from file-notify; this is a fallback."
   (let ((timer (run-with-timer
-                5.0  ; Check every 5 seconds
-                5.0
+                30.0  ; Check every 30 seconds (backup only)
+                30.0
                 (lambda () (claude-multi--check-kitty-status agent)))))
     (setf (claude-agent-status-timer agent) timer)))
 
@@ -258,6 +274,9 @@ Returns a plist with :name, :color, :text, :bg properties."
 (defun claude-multi--kill-agent (agent)
   "Kill AGENT and cleanup all resources."
   (when agent
+    ;; Unregister from file-based status updates
+    (claude-multi--unregister-agent-for-status agent)
+
     ;; Cancel status timer
     (when-let ((timer (claude-agent-status-timer agent)))
       (cancel-timer timer))

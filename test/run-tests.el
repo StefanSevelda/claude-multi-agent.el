@@ -6,18 +6,12 @@
 
 ;;; Code:
 
-;; Add parent directory to load path
-(let ((project-root (file-name-directory
-                     (directory-file-name
-                      (file-name-directory load-file-name)))))
-  (add-to-list 'load-path project-root)
-  (add-to-list 'load-path (expand-file-name "autoload" project-root)))
-
-;; Load dependencies
-(require 'buttercup)
+;; Load test helper (sets up dependencies)
+(load (expand-file-name "test-helper.el"
+                        (file-name-directory load-file-name)))
 
 ;; Load test files
-(load (expand-file-name "test-vterm-integration.el"
+(load (expand-file-name "test-kitty-integration.el"
                         (file-name-directory load-file-name)))
 
 ;; Run tests

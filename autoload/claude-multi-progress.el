@@ -1,25 +1,15 @@
 ;; -*- lexical-binding: t; -*-
-;;; autoload/progress.el --- Org-mode progress tracking for Claude Multi-Agent
+;;; autoload/claude-multi-progress.el --- Session tracking for Claude Multi-Agent
 
 ;;; Commentary:
-;; Centralized org-mode-based progress tracking for all agents
+;; Centralized org-mode-based session tracking for all agents.
+;; Status updates come from file-notify watching /tmp/claude-status/.
 
 ;;; Code:
 
 (require 's)
 (require 'f)
 (require 'org)
-
-;;; Throttling variables
-
-(defvar claude-multi--last-update-time nil
-  "Hash table tracking last update time for each agent.")
-
-(defvar claude-multi--pending-updates nil
-  "Hash table of pending output updates for each agent.")
-
-(defvar claude-multi--update-timer nil
-  "Timer for processing pending updates.")
 
 ;;; Progress buffer initialization
 
@@ -67,82 +57,8 @@
                        (format-time-string "[%Y-%m-%d %a %H:%M:%S]"
                                          (claude-agent-created-at agent))))
         (insert (format ":END:\n\n"))
-        (insert (format "- Task :: %s\n\n" (claude-agent-task-description agent)))
-        (insert (format "*** Progress\n\n"))
-        (claude-multi--insert-agent-marker agent)
-        (insert "\n")))))
-
-;;; Output appending
-
-;;;###autoload
-(defun claude-multi--append-agent-output (agent output)
-  "Append OUTPUT from AGENT to its section in the progress buffer.
-Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'."
-  (unless claude-multi--last-update-time
-    (setq claude-multi--last-update-time (make-hash-table :test 'equal)))
-  (unless claude-multi--pending-updates
-    (setq claude-multi--pending-updates (make-hash-table :test 'equal)))
-
-  (let* ((agent-id (claude-agent-id agent))
-         (now (float-time))
-         (last-update (gethash agent-id claude-multi--last-update-time 0))
-         (delay claude-multi-output-throttle-delay))
-
-    ;; Store the pending output
-    (puthash agent-id output claude-multi--pending-updates)
-
-    ;; If throttling is disabled or enough time has passed, update immediately
-    (when (or (= delay 0) (> (- now last-update) delay))
-      (claude-multi--do-append-agent-output agent output)
-      (puthash agent-id now claude-multi--last-update-time)
-      (remhash agent-id claude-multi--pending-updates))
-
-    ;; Otherwise, schedule a delayed update if not already scheduled
-    (when (and (> delay 0)
-               (<= (- now last-update) delay)
-               (not claude-multi--update-timer))
-      (setq claude-multi--update-timer
-            (run-with-timer delay nil
-                           #'claude-multi--process-pending-updates)))))
-
-(defun claude-multi--do-append-agent-output (agent output)
-  "Actually append OUTPUT from AGENT to progress buffer without throttling."
-  (when (buffer-live-p claude-multi--progress-buffer)
-    (with-current-buffer claude-multi--progress-buffer
-      (let ((inhibit-read-only t)
-            (marker-pos (claude-multi--find-agent-marker agent)))
-        (when marker-pos
-          (goto-char marker-pos)
-          ;; Insert before the marker
-          (forward-line -1)
-          (end-of-line)
-          (insert "\n")
-          (insert (format "- [%s] %s"
-                         (format-time-string "%H:%M:%S")
-                         (string-trim output)))
-          ;; Color code based on content
-          (when (string-match-p "error\\|fail" (downcase output))
-            (add-text-properties (line-beginning-position) (line-end-position)
-                                '(face (:foreground "red"))))
-          (when (string-match-p "success\\|complete" (downcase output))
-            (add-text-properties (line-beginning-position) (line-end-position)
-                                '(face (:foreground "green"))))
-          (when (claude-multi--detect-input-request output)
-            (add-text-properties (line-beginning-position) (line-end-position)
-                                '(face (:foreground "yellow" :weight bold)))))))))
-
-(defun claude-multi--process-pending-updates ()
-  "Process any pending output updates for all agents."
-  (setq claude-multi--update-timer nil)
-  (when claude-multi--pending-updates
-    (maphash
-     (lambda (agent-id output)
-       (let ((agent (claude-multi--get-agent-by-id agent-id)))
-         (when agent
-           (claude-multi--do-append-agent-output agent output)
-           (puthash agent-id (float-time) claude-multi--last-update-time))))
-     claude-multi--pending-updates)
-    (clrhash claude-multi--pending-updates)))
+        (insert (format "- Task :: %s\n" (claude-agent-task-description agent)))
+        (insert (format "- Current Activity :: Starting...\n"))))))
 
 ;;;###autoload
 (defun claude-multi--update-agent-status (agent)
@@ -157,7 +73,7 @@ Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'
                  nil t)
             ;; Update the heading with current status icon
             (beginning-of-line)
-            (kill-line)
+            (delete-region (line-beginning-position) (line-end-position))
             (insert (format "** %s %s"
                            (claude-multi--get-status-icon (claude-agent-status agent))
                            (claude-agent-name agent)))
@@ -235,7 +151,7 @@ Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'
           (goto-char (point-min))
           (when (re-search-forward "^- Stats :: " nil t)
             (beginning-of-line)
-            (kill-line)
+            (delete-region (line-beginning-position) (line-end-position))
             (insert (format "- Stats :: %d total | %d running | %d waiting | %d completed | %d failed"
                            total running waiting completed failed))))))))
 
@@ -252,24 +168,6 @@ Uses throttling to reduce flashing based on `claude-multi-output-throttle-delay'
     ('pending "⚪")
     (_ "❓")))
 
-(defun claude-multi--insert-agent-marker (agent)
-  "Insert a marker at the end of AGENT's progress section.
-This marker is used to find where to append new output."
-  (let ((marker-text (format "<!-- agent-marker-%s -->" (claude-agent-id agent))))
-    (insert marker-text)))
-
-(defun claude-multi--find-agent-marker (agent)
-  "Find the position of AGENT's marker in the progress buffer.
-Returns the position or nil if not found."
-  (when (buffer-live-p claude-multi--progress-buffer)
-    (with-current-buffer claude-multi--progress-buffer
-      (save-excursion
-        (goto-char (point-min))
-        (when (re-search-forward
-               (format "<!-- agent-marker-%s -->" (regexp-quote (claude-agent-id agent)))
-               nil t)
-          (point))))))
-
 ;;;###autoload
 (defun claude-multi--highlight-input-requests ()
   "Highlight all input request lines in the progress buffer."
@@ -281,17 +179,6 @@ Returns the position or nil if not found."
           (while (re-search-forward "🟡\\|WAITING FOR INPUT" nil t)
             (add-text-properties (line-beginning-position) (line-end-position)
                                 '(face (:foreground "yellow" :weight bold)))))))))
-
-;;; Auto-scroll functionality
-
-(defun claude-multi--auto-scroll-progress ()
-  "Auto-scroll the progress buffer to show latest updates."
-  (when (buffer-live-p claude-multi--progress-buffer)
-    (let ((windows (get-buffer-window-list claude-multi--progress-buffer nil t)))
-      (dolist (window windows)
-        (with-selected-window window
-          (goto-char (point-max))
-          (recenter -3))))))
 
 ;;; Export functionality
 
@@ -309,4 +196,4 @@ Returns the position or nil if not found."
       (message "Progress exported to %s" filename))))
 
 (provide 'claude-multi-progress)
-;;; progress.el ends here
+;;; claude-multi-progress.el ends here

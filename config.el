@@ -19,7 +19,8 @@
   (require 'claude-multi-agents)
   (require 'claude-multi-progress)
   (require 'claude-multi-worktree)
-  (require 'claude-multi-notifications))
+  (require 'claude-multi-notifications)
+  (require 'claude-multi-status))
 
 (defgroup claude-multi nil
   "Manage multiple Claude Code agents in parallel."
@@ -172,7 +173,10 @@ Used for round-robin split placement or intelligent tab management.")
   "Spawn a new Claude agent with TASK-DESCRIPTION.
 Optional DIRECTORY specifies the working directory.
 Optional BRANCH specifies the git branch (creates a worktree if provided)."
-  (interactive "sTask description: ")
+  (interactive
+   (list (read-string "Task description: ")
+         (read-directory-name "Working directory: " nil default-directory t)
+         nil))
   (unless claude-multi--session-start-time
     (claude-multi/start-session))
   (let ((agent (claude-multi--create-agent task-description))
@@ -308,6 +312,8 @@ Optional BRANCH specifies the git branch (creates a worktree if provided)."
     (dolist (agent claude-multi--agents)
       (claude-multi--kill-agent agent))
     (setq claude-multi--agents nil)
+    ;; Cleanup status tracking
+    (claude-multi--cleanup-status-tracking)
     ;; Teardown notification system
     (claude-multi--teardown-notifications)
     ;; Close session OS window if it exists
@@ -334,23 +340,25 @@ Optional BRANCH specifies the git branch (creates a worktree if provided)."
   (org-indent-mode 1)
   (visual-line-mode 1))
 
-;; Keybindings
+;; Keybindings (only in interactive Emacs with Doom)
 
-(map! :leader
-      :prefix ("c m" . "claude-multi")
-      :desc "Start session"           "s" #'claude-multi/start-session
-      :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
-      :desc "Spawn agent in tab"      "t" #'claude-multi/spawn-agent-tab
-      :desc "Spawn agent in split"    "w" #'claude-multi/spawn-agent-split
-      :desc "Spawn with worktree"     "W" #'claude-multi/spawn-agent-with-worktree
-      :desc "Open progress"           "p" #'claude-multi/open-progress
-      :desc "Dashboard"               "d" #'claude-multi/dashboard
-      :desc "Focus agent"             "f" #'claude-multi/focus-agent
-      :desc "Kill agent"              "k" #'claude-multi/kill-agent
-      :desc "Kill all"                "K" #'claude-multi/kill-all-agents
-      :desc "Export progress"         "e" #'claude-multi/export-progress
-      :desc "List worktrees"          "T" #'claude-multi/list-worktrees
-      :desc "Cleanup worktrees"       "c" #'claude-multi/cleanup-orphaned-worktrees)
+(when (and (fboundp 'map!)
+           (not noninteractive))
+  (map! :leader
+        :prefix ("c m" . "claude-multi")
+        :desc "Start session"           "s" #'claude-multi/start-session
+        :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
+        :desc "Spawn agent in tab"      "t" #'claude-multi/spawn-agent-tab
+        :desc "Spawn agent in split"    "w" #'claude-multi/spawn-agent-split
+        :desc "Spawn with worktree"     "W" #'claude-multi/spawn-agent-with-worktree
+        :desc "Open progress"           "p" #'claude-multi/open-progress
+        :desc "Dashboard"               "d" #'claude-multi/dashboard
+        :desc "Focus agent"             "f" #'claude-multi/focus-agent
+        :desc "Kill agent"              "k" #'claude-multi/kill-agent
+        :desc "Kill all"                "K" #'claude-multi/kill-all-agents
+        :desc "Export progress"         "e" #'claude-multi/export-progress
+        :desc "List worktrees"          "T" #'claude-multi/list-worktrees
+        :desc "Cleanup worktrees"       "c" #'claude-multi/cleanup-orphaned-worktrees))
 
 (provide 'claude-multi-config)
 ;;; config.el ends here
