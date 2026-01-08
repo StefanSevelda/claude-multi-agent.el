@@ -147,16 +147,21 @@
 
 ;;; Agent discovery and matching
 
+(defun claude-multi--normalize-path (path)
+  "Normalize PATH by resolving symlinks and removing trailing slashes."
+  (when path
+    (directory-file-name (file-truename (expand-file-name path)))))
+
 (defun claude-multi--find-agent-by-cwd (cwd)
   "Find an agent whose worktree or directory matches CWD."
   (when cwd
-    (let ((normalized-cwd (file-truename (expand-file-name cwd))))
+    (let ((normalized-cwd (claude-multi--normalize-path cwd)))
       (cl-find-if
        (lambda (agent)
          (let ((agent-path (or (claude-agent-worktree-path agent)
                                (claude-agent-working-directory agent))))
            (when agent-path
-             (string= (file-truename (expand-file-name agent-path))
+             (string= (claude-multi--normalize-path agent-path)
                       normalized-cwd))))
        claude-multi--agents))))
 
@@ -212,6 +217,10 @@ Adds to pending list until session-id is discovered from status file."
 
     ;; Update session buffer
     (claude-multi--update-session-from-status agent status-data)
+
+    ;; Update the status drawer display with latest status
+    (when (fboundp 'claude-multi--update-agent-status-display)
+      (claude-multi--update-agent-status-display agent))
 
     ;; Notify if waiting for input
     (when waiting

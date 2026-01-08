@@ -167,7 +167,10 @@
         ;; Show the STATUS drawer by default (org-mode collapses drawers by default)
         (save-excursion
           (forward-line -5)  ; Go back to the ** headline
-          (claude-multi--show-subtree-safe))))))
+          (claude-multi--show-subtree-safe))
+
+        ;; Try to populate STATUS drawer immediately if status data is available
+        (claude-multi--update-agent-status-display agent)))))
 
 (defun claude-multi--show-subtree-safe ()
   "Safely show org subtree, with fallback if org-mode not available."
