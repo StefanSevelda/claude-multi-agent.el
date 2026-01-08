@@ -1,21 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(*)",
-      "Edit(*)",
-      "Write(*)",
-      "Read(*)"
+      "Bash",
+      "Edit",
+      "Write",
+      "Read"
     ]
   },
   "hooks": {
-    "afterToolUse": [
+    "PostToolUse": [
       {
-        "description": "Run tests after editing Emacs Lisp files",
-        "match": {
-          "toolNames": ["Edit", "Write"],
-          "filePatterns": ["**/*.el"]
-        },
-        "command": "emacs --batch -l test/run-tests.el 2>&1 | tail -50"
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "emacs --batch -l test/run-tests.el 2>&1 | tail -50"
+          }
+        ]
       }
     ]
   }

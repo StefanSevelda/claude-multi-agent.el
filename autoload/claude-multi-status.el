@@ -16,7 +16,7 @@
 (declare-function claude-agent-name "claude-multi-agents")
 (declare-function claude-agent-status "claude-multi-agents")
 (declare-function claude-agent-worktree-path "claude-multi-agents")
-(declare-function claude-agent-directory "claude-multi-agents")
+(declare-function claude-agent-working-directory "claude-multi-agents")
 (declare-function claude-agent-session-id "claude-multi-agents")
 (declare-function claude-agent-created-at "claude-multi-agents")
 (declare-function claude-agent-completed-at "claude-multi-agents")
@@ -31,9 +31,12 @@
 (defvar claude-multi--progress-buffer)
 
 ;; Accessors for cl-struct setf (indices based on claude-agent defstruct)
-(gv-define-setter claude-agent-session-id (val agent) `(aset ,agent 17 ,val))
-(gv-define-setter claude-agent-last-status-data (val agent) `(aset ,agent 20 ,val))
-(gv-define-setter claude-agent-status (val agent) `(aset ,agent 10 ,val))
+;; Note: cl-defstruct uses 1-based indexing (index 0 is type tag)
+;; session-id=18, mcp-request-counter=19, ediff-session=20, last-status-data=21
+;; status=11
+(gv-define-setter claude-agent-session-id (val agent) `(aset ,agent 18 ,val))
+(gv-define-setter claude-agent-last-status-data (val agent) `(aset ,agent 21 ,val))
+(gv-define-setter claude-agent-status (val agent) `(aset ,agent 11 ,val))
 
 ;;; Variables
 
@@ -151,7 +154,7 @@
       (cl-find-if
        (lambda (agent)
          (let ((agent-path (or (claude-agent-worktree-path agent)
-                               (claude-agent-directory agent))))
+                               (claude-agent-working-directory agent))))
            (when agent-path
              (string= (file-truename (expand-file-name agent-path))
                       normalized-cwd))))
@@ -293,6 +296,24 @@ Adds to pending list until session-id is discovered from status file."
   (clrhash claude-multi--status-cache)
   (clrhash claude-multi--session-to-agent)
   (setq claude-multi--pending-agents nil))
+
+;;;###autoload
+(defun claude-multi/cleanup-status-files ()
+  "Delete all status JSON files from the status directory.
+This removes stale status files from previous sessions."
+  (interactive)
+  (if (not (file-exists-p claude-multi-status-directory))
+      (message "Status directory does not exist: %s" claude-multi-status-directory)
+    (let* ((files (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
+           (count (length files)))
+      (if (zerop count)
+          (message "No status files to clean up")
+        (dolist (file files)
+          (delete-file file))
+        (message "Cleaned up %d status file%s from %s"
+                 count
+                 (if (= count 1) "" "s")
+                 claude-multi-status-directory)))))
 
 ;;; Utility functions
 

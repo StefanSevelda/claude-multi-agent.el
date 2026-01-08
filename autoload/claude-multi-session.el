@@ -48,8 +48,9 @@
 (defvar claude-multi--session-autosave-timer nil
   "Timer for automatic session saving.")
 
-(defvar claude-multi--session-version "1.0"
-  "Session file format version.")
+(defvar claude-multi--session-version "1.1"
+  "Session file format version.
+Bumped to 1.1 when ediff-session and last-status-data fields were added to claude-agent struct.")
 
 ;;; Serialization
 
@@ -212,10 +213,14 @@ Returns the number of agents restored."
         (unless session-data
           (error "Session file not found: %s" filepath))
 
-        ;; Validate version
-        (unless (string= version claude-multi--session-version)
-          (error "Incompatible session version: %s (expected %s)"
-                 version claude-multi--session-version))
+        ;; Validate version (allow backward-compatible versions)
+        (let ((saved-major (when version (car (version-to-list version))))
+              (current-major (car (version-to-list claude-multi--session-version))))
+          (unless (and saved-major
+                      current-major
+                      (<= saved-major current-major))
+            (message "Warning: Session version %s differs from current %s, attempting restore..."
+                     version claude-multi--session-version)))
 
         ;; Restore global state
         (when global-state

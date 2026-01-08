@@ -252,7 +252,7 @@ Returns a plist with :name, :color, :text, :bg properties."
                                   (claude-multi--send-to-kitty agt command))
                                ;; No worktree - cd to working directory then start Claude
                                (let ((dir (claude-agent-working-directory agt)))
-                                 (if dir
+                                 (if (and dir (stringp dir))
                                      (claude-multi--send-to-kitty
                                       agt
                                       (format "cd %s && %s"

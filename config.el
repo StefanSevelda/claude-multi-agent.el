@@ -180,11 +180,15 @@ When enabled, agent status will be shown as org-mode tags
 (declare-function claude-agent-completed-at "claude-multi-agents")
 (declare-function claude-agent-id "claude-multi-agents")
 (declare-function claude-multi--init-progress-buffer "claude-multi-progress")
+(declare-function claude-multi/cleanup-status-files "claude-multi-status")
 
 ;; cl-lib setf accessors for struct
-(gv-define-setter claude-agent-worktree-path (val agent) `(aset ,agent 7 ,val))
-(gv-define-setter claude-agent-branch-name (val agent) `(aset ,agent 8 ,val))
-(gv-define-setter claude-agent-working-directory (val agent) `(aset ,agent 9 ,val))
+;; Note: cl-defstruct uses 1-based indexing (index 0 is type tag)
+;; Count fields from 1: id=1, name=2, color=3, kitty-window-id=4, kitty-tab-id=5,
+;; context-buffer=6, status-timer=7, worktree-path=8, branch-name=9, working-directory=10
+(gv-define-setter claude-agent-worktree-path (val agent) `(aset ,agent 8 ,val))
+(gv-define-setter claude-agent-branch-name (val agent) `(aset ,agent 9 ,val))
+(gv-define-setter claude-agent-working-directory (val agent) `(aset ,agent 10 ,val))
 
 ;; Global variables
 (defvar claude-multi--agents nil
@@ -493,6 +497,7 @@ ACTION-FN is called with point at the beginning of each headline."
           :desc "Focus agent"             "f" #'claude-multi/focus-agent
           :desc "Kill agent"              "k" #'claude-multi/kill-agent
           :desc "Kill all"                "K" #'claude-multi/kill-all-agents
+          :desc "Cleanup status files"    "c" #'claude-multi/cleanup-status-files
           :desc "Export progress"         "e" #'claude-multi/export-progress
           :desc "List worktrees"          "l" #'claude-multi/list-worktrees
           :desc "Save session"            "S" #'claude-multi/save-session
