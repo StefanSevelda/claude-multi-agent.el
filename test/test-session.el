@@ -50,19 +50,24 @@
                 :id (or (plist-get overrides :id) "agent-1")
                 :name (or (plist-get overrides :name) "claude-agent-1")
                 :color (or (plist-get overrides :color) "#FF4444")
-                :task-description (or (plist-get overrides :task) "Test task")
-                :status (or (plist-get overrides :status) 'running)
                 :kitty-window-id (or (plist-get overrides :window-id) "test-window-1")
                 :kitty-tab-id (or (plist-get overrides :tab-id) "test-tab-1")
+                :context-buffer nil
+                :status-timer nil
                 :worktree-path (or (plist-get overrides :worktree) "/tmp/test-worktree")
                 :branch-name (or (plist-get overrides :branch) "test-branch")
                 :working-directory (or (plist-get overrides :dir) "/tmp")
+                :status (or (plist-get overrides :status) 'running)
+                :task-description (or (plist-get overrides :task) "Test task")
                 :created-at (or (plist-get overrides :created) (current-time))
                 :completed-at (plist-get overrides :completed)
+                :websocket-connection nil
                 :communication-backend (or (plist-get overrides :backend) 'polling)
                 :mcp-enabled (or (plist-get overrides :mcp) nil)
                 :session-id (plist-get overrides :session-id)
-                :mcp-request-counter (or (plist-get overrides :counter) 0))))
+                :mcp-request-counter (or (plist-get overrides :counter) 0)
+                :ediff-session nil
+                :last-status-data nil)))
     agent))
 
 ;;; Tests
