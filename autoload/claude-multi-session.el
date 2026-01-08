@@ -32,6 +32,7 @@
 (declare-function claude-multi--kitty-is-alive "claude-multi-agents")
 (declare-function claude-multi--add-agent-section "claude-multi-progress")
 (declare-function claude-multi--update-session-stats "claude-multi-progress")
+(declare-function claude-multi--register-agent-for-status "claude-multi-status")
 (declare-function claude-multi-ws--is-connected "claude-multi-websocket")
 (declare-function claude-multi-ws--get-port-env "claude-multi-websocket")
 (declare-function markdown-mode "markdown-mode")
@@ -235,7 +236,11 @@ Returns the number of agents restored."
 
             ;; Add to progress buffer if available
             (when (fboundp 'claude-multi--add-agent-section)
-              (claude-multi--add-agent-section agent))))
+              (claude-multi--add-agent-section agent))
+
+            ;; Register for status file tracking
+            (when (fboundp 'claude-multi--register-agent-for-status)
+              (claude-multi--register-agent-for-status agent))))
 
         ;; Update session statistics
         (when (fboundp 'claude-multi--update-session-stats)

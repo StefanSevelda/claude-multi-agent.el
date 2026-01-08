@@ -168,6 +168,7 @@ Adds to pending list until session-id is discovered from status file."
   (push agent claude-multi--pending-agents)
   ;; Also try to immediately find existing status file by cwd
   (let ((agent-path (or (claude-agent-worktree-path agent)
+                        (claude-agent-working-directory agent)
                         default-directory)))
     (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
       (let ((status-data (claude-multi--read-status-file file)))

@@ -108,5 +108,52 @@
           (beginning-of-line)
           (org-cycle))))))
 
+;;; Mock functions for status tracking
+
+(unless (fboundp 'claude-multi--notify-input-needed)
+  (defun claude-multi--notify-input-needed (agent)
+    "Mock version for tests - does nothing."
+    nil))
+
+(unless (fboundp 'claude-multi--update-session-from-status)
+  (defun claude-multi--update-session-from-status (agent status-data)
+    "Mock version for tests - does nothing."
+    nil))
+
+(unless (fboundp 'claude-multi--kitty-is-alive)
+  (defun claude-multi--kitty-is-alive (agent)
+    "Mock version for tests - always returns true."
+    t))
+
+;;; Mock status file helpers
+
+(defvar claude-multi-status-directory "/tmp/claude-status-test/"
+  "Test directory for status files (overrides production value).")
+
+(defun test-helper--create-mock-status-file (session-id cwd)
+  "Create a mock status file for testing.
+SESSION-ID is the agent session ID, CWD is the working directory path."
+  (let ((status-file (expand-file-name
+                      (format "status-%s.json" session-id)
+                      claude-multi-status-directory)))
+    (make-directory claude-multi-status-directory t)
+    (with-temp-file status-file
+      (insert (json-encode `((cwd . ,cwd)
+                            (session_id . ,session-id)
+                            (timestamp . ,(format-time-string "%Y-%m-%dT%H:%M:%S"))
+                            (claude_status . "running")
+                            (waiting_for_input . :json-false)
+                            (context_window . ((tokens_used . 1000)
+                                             (tokens_total . 200000)
+                                             (percentage_used . 0.5)))))))
+    status-file))
+
+(defun test-helper--cleanup-mock-status-files ()
+  "Clean up mock status files after tests."
+  (when (file-exists-p claude-multi-status-directory)
+    (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
+      (delete-file file))
+    (ignore-errors (delete-directory claude-multi-status-directory))))
+
 (provide 'test-helper)
 ;;; test-helper.el ends here
