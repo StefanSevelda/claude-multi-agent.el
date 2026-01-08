@@ -18,6 +18,7 @@
 (declare-function claude-multi--get-agent-by-id "claude-multi-agents")
 (declare-function claude-multi--detect-input-request "claude-multi-notifications")
 (declare-function claude-multi--format-duration "claude-multi-agents")
+(declare-function claude-multi--get-cached-status "claude-multi-status")
 (declare-function claude-agent-id "claude-multi-agents")
 (declare-function claude-agent-status "claude-multi-agents")
 (declare-function claude-agent-color "claude-multi-agents")
@@ -500,87 +501,43 @@ Returns the position or nil if not found."
       (message "Progress exported to %s" filename))))
 
 ;;; Per-agent status summary integration
+;;
+;; Note: Status tracking is now handled by claude-multi-status.el
+;; which uses file-notify to watch /tmp/claude-status/*.json files.
+;; The functions below are stubs for backward compatibility.
 
 (require 'json)
 
-(defvar claude-multi--status-file-watches nil
-  "Hash table mapping agent IDs to file watch descriptors.")
-
-(defvar claude-multi--status-watch-upgraded nil
-  "Hash table tracking which watches have been upgraded from directory to file.")
-
-(defvar claude-multi--status-update-in-progress nil
-  "Guard to prevent recursive status updates.")
-
-(defun claude-multi--parse-status-json (json-file)
-  "Parse status.json file and return formatted org-mode content."
-  (when (file-exists-p json-file)
+(defun claude-multi--format-status-data (status-data)
+  "Format STATUS-DATA (an alist from claude-multi-status) into org-mode content."
+  (when status-data
     (condition-case err
-        (let* ((json-object-type 'plist)
-               (json-array-type 'list)
-               (json-key-type 'keyword)
-               (data (json-read-file json-file))
-               (status (plist-get data :status))
-               (timestamp (plist-get data :timestamp))
-               (session-started (plist-get data :session_started))
-               (waiting (plist-get data :waiting_for_input))
-               (activity (plist-get data :current_activity))
-               (changes (plist-get data :changes))
-               (question (plist-get data :question))
-               (context (plist-get data :context_window))
-               (git-info (plist-get data :git))
-               (business-ctx (plist-get data :business_context)))
+        (let* ((claude-status (alist-get 'claude_status status-data))
+               (timestamp (alist-get 'timestamp status-data))
+               (session-started (alist-get 'session_started status-data))
+               (waiting (alist-get 'waiting_for_input status-data))
+               (activity (alist-get 'current_activity status-data))
+               (context (alist-get 'context_window status-data))
+               (git-info (alist-get 'git status-data)))
 
           ;; Build formatted output
           (with-temp-buffer
             ;; Status indicator
             (if waiting
                 (insert "#+BEGIN_WARNING\n⏸ *WAITING FOR INPUT*\n#+END_WARNING\n\n")
-              (insert (format "- Status :: %s\n\n" (or status "Working..."))))
-
-            ;; Show question prominently if waiting for input
-            (when (and waiting question)
-              (insert "*Question from Agent:*\n\n")
-              (insert "#+BEGIN_QUOTE\n")
-              (insert (format "%s\n" question))
-              (insert "#+END_QUOTE\n\n"))
-
-            ;; Business context (technical domains, objective, JIRA tickets)
-            (when business-ctx
-              (let ((domains (plist-get business-ctx :technical_domains))
-                    (objective (plist-get business-ctx :objective))
-                    (confidence (plist-get business-ctx :confidence))
-                    (method (plist-get business-ctx :extraction_method))
-                    (jira (plist-get business-ctx :jira_tickets)))
-                (insert "*Business Context*\n\n")
-                (when domains
-                  (insert "- Domains :: ")
-                  (insert (mapconcat (lambda (d) (format "=%s=" d)) domains ", "))
-                  (insert "\n"))
-                (when objective
-                  (insert (format "- Objective :: %s\n" objective)))
-                (when (and jira (> (length jira) 0))
-                  (insert "- JIRA :: ")
-                  (insert (mapconcat (lambda (ticket) (format "[[%s]]" ticket)) jira ", "))
-                  (insert "\n"))
-                (when (and confidence (< confidence 0.8))
-                  (insert (format "- Confidence :: %.0f%% /%s/\n" (* confidence 100) method)))
-                (insert "\n")))
+              (insert (format "- Status :: %s\n\n" (or claude-status "Working..."))))
 
             ;; Context window usage
             (when context
-              (let* ((used (plist-get context :tokens_used))
-                     (total (plist-get context :tokens_total))
-                     (pct (plist-get context :percentage_used))
-                     (remaining (plist-get context :tokens_remaining)))
+              (let* ((used (alist-get 'tokens_used context))
+                     (total (alist-get 'tokens_total context))
+                     (pct (alist-get 'percentage_used context)))
                 (insert "*Context Window*\n\n")
                 (insert (format "- Usage :: %d / %d tokens (%.1f%%)\n"
-                               used total pct))
-                (insert (format "- Remaining :: %s tokens\n"
-                               (claude-multi--format-number remaining)))
+                               (or used 0) (or total 200000) (or pct 0.0)))
                 ;; Visual progress bar
                 (let* ((bar-width 40)
-                       (filled (round (* bar-width (/ pct 100.0)))))
+                       (filled (round (* bar-width (/ (or pct 0.0) 100.0)))))
                   (insert "- Progress :: [")
                   (insert (make-string filled ?█))
                   (insert (make-string (- bar-width filled) ?░))
@@ -589,96 +546,32 @@ Returns the position or nil if not found."
 
             ;; Git information
             (when git-info
-              (let ((branch (plist-get git-info :branch))
-                    (repo (plist-get git-info :repository))
-                    (changed-files (plist-get git-info :changed_files))
-                    (has-changes (plist-get git-info :has_changes))
-                    (ahead (plist-get git-info :commits_ahead))
-                    (behind (plist-get git-info :commits_behind)))
+              (let ((branch (alist-get 'branch git-info)))
                 (insert "*Git Status*\n\n")
-                (when repo
-                  (insert (format "- Repository :: %s\n" repo)))
                 (when branch
-                  (insert (format "- Branch :: =%s=" branch))
-                  (when (or (and ahead (> ahead 0)) (and behind (> behind 0)))
-                    (insert " (")
-                    (when (and ahead (> ahead 0))
-                      (insert (format "↑%d" ahead)))
-                    (when (and ahead (> ahead 0) behind (> behind 0))
-                      (insert " "))
-                    (when (and behind (> behind 0))
-                      (insert (format "↓%d" behind)))
-                    (insert ")"))
-                  (insert "\n"))
-                (when (and has-changes changed-files)
-                  (insert (format "- Changed Files :: %d\n" (length changed-files)))
-                  (insert "\n")
-                  (dolist (file-info changed-files)
-                    (let ((file (plist-get file-info :file))
-                          (status (plist-get file-info :status)))
-                      (insert (format "  - =%s= ~%s~\n"
-                                    (claude-multi--git-status-icon status)
-                                    file)))))
+                  (insert (format "- Branch :: =%s=\n" branch)))
                 (insert "\n")))
 
             ;; Current activity section
             (when activity
-              (let ((goal (plist-get activity :goal))
-                    (waiting-activity (plist-get activity :waiting)))
+              (let ((goal (alist-get 'goal activity)))
                 (insert "*Current Activity*\n\n")
                 (when goal
                   (insert (format "- Goal :: %s\n" goal)))
-                (when waiting-activity
-                  (insert "- Status :: Waiting\n"))
                 (insert "\n")))
-
-            ;; Recent changes section
-            (when changes
-              (let ((recent (plist-get changes :recent))
-                    (total (plist-get changes :total_count)))
-                (when recent
-                  (insert "*Recent Changes*\n\n")
-                  (dolist (change recent)
-                    (insert (format "- %s\n" change)))
-                  (insert "\n")
-                  (when (and total (> total (length recent)))
-                    (insert (format "#+BEGIN_CENTER\n/%d total changes this session/\n#+END_CENTER\n\n" total))))))
 
             ;; Session info footer
             (insert "#+BEGIN_CENTER\n")
-            (when session-started
-              (insert (format "Session: %s  |  "
-                            (claude-multi--format-timestamp session-started))))
             (insert (format "Updated: %s\n"
                           (if timestamp
-                              (claude-multi--format-timestamp timestamp)
+                              (claude-multi--format-timestamp (format "%s" timestamp))
                             "unknown")))
             (insert "#+END_CENTER\n")
 
             (buffer-string)))
       (error
-       (format "#+BEGIN_EXAMPLE\nError parsing status.json: %s\n#+END_EXAMPLE\n"
+       (format "#+BEGIN_EXAMPLE\nError formatting status: %s\n#+END_EXAMPLE\n"
                (error-message-string err))))))
-
-(defun claude-multi--git-status-icon (status)
-  "Return a descriptive icon/text for git STATUS code."
-  (pcase status
-    ("M" "[M]") ; Modified
-    ("A" "[+]") ; Added
-    ("D" "[-]") ; Deleted
-    ("R" "[→]") ; Renamed
-    ("MM" "[M*]") ; Modified in both
-    ("??" "[?]") ; Untracked
-    (_ (format "[%s]" status))))
-
-(defun claude-multi--format-number (num)
-  "Format NUM with thousand separators."
-  (let ((str (number-to-string num))
-        (result ""))
-    (while (> (length str) 3)
-      (setq result (concat "," (substring str -3) result))
-      (setq str (substring str 0 -3)))
-    (concat str result)))
 
 (defun claude-multi--format-timestamp (ts)
   "Format ISO 8601 TIMESTAMP TS to a readable format."
@@ -694,139 +587,68 @@ Returns the position or nil if not found."
 
 ;;;###autoload
 (defun claude-multi--update-agent-status-display (agent)
-  "Update AGENT's :STATUS: drawer with latest status.json content.
+  "Update AGENT's :STATUS: drawer with latest status from claude-multi-status module.
 The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
-  ;; Guard against recursive calls
-  (when (and (not claude-multi--status-update-in-progress)
-             (buffer-live-p claude-multi--progress-buffer))
-    (setq claude-multi--status-update-in-progress t)
-    (unwind-protect
-        (with-current-buffer claude-multi--progress-buffer
-          (let* ((inhibit-read-only t)
-                 (agent-dir (or (claude-agent-worktree-path agent)
-                               (claude-agent-working-directory agent)
-                               default-directory))
-                 (status-file (expand-file-name "status.json" agent-dir))
-                 (content (claude-multi--parse-status-json status-file))
-                 (headline-pos nil))
-            ;; Find the agent's status marker inside the STATUS drawer
-            (save-excursion
-              (goto-char (point-min))
-              (when (re-search-forward (format "<!-- status-marker-%s -->"
-                                              (regexp-quote (claude-agent-id agent))) nil t)
-                ;; Move past the marker line to start of content area
+  (when (buffer-live-p claude-multi--progress-buffer)
+    (with-current-buffer claude-multi--progress-buffer
+      (let* ((inhibit-read-only t)
+             ;; Get cached status from the status module
+             (status-data (when (fboundp 'claude-multi--get-cached-status)
+                           (claude-multi--get-cached-status agent)))
+             (content (when status-data
+                       (claude-multi--format-status-data status-data)))
+             (headline-pos nil))
+        ;; Find the agent's status marker inside the STATUS drawer
+        (save-excursion
+          (goto-char (point-min))
+          (when (re-search-forward (format "<!-- status-marker-%s -->"
+                                          (regexp-quote (claude-agent-id agent))) nil t)
+            ;; Move past the marker line to start of content area
+            (beginning-of-line)
+            (forward-line 1)
+            ;; Save position for insertion
+            (let ((insert-pos (point)))
+              ;; Find the :END: tag of the STATUS drawer
+              (when (re-search-forward "^   :END:" nil t)
                 (beginning-of-line)
-                (forward-line 1)
-                ;; Save position for insertion
-                (let ((insert-pos (point)))
-                  ;; Find the :END: tag of the STATUS drawer
-                  (when (re-search-forward "^   :END:" nil t)
-                    (beginning-of-line)
-                    ;; Delete old content between marker and :END:
-                    (delete-region insert-pos (point))
-                    ;; Go back to insertion point and insert new content
-                    (goto-char insert-pos)
-                    (if content
-                        (insert content "\n")
-                      (insert "/Status file not found or empty/\n"))
+                ;; Delete old content between marker and :END:
+                (delete-region insert-pos (point))
+                ;; Go back to insertion point and insert new content
+                (goto-char insert-pos)
+                (if content
+                    (insert content "\n")
+                  (insert "/Waiting for status update.../\n"))
 
-                    ;; Find the headline position for this agent
-                    (goto-char (point-min))
-                    (when (re-search-forward
-                           (format "^\\*\\* .* %s" (regexp-quote (claude-agent-id agent)))
-                           nil t)
-                      (setq headline-pos (line-beginning-position)))))))
+                ;; Find the headline position for this agent
+                (goto-char (point-min))
+                (when (re-search-forward
+                       (format "^\\*\\* .* %s" (regexp-quote (claude-agent-id agent)))
+                       nil t)
+                  (setq headline-pos (line-beginning-position)))))))
 
-            ;; Auto-expand drawer if agent is waiting for input
-            (when (and headline-pos content (string-match-p "WAITING FOR INPUT" content))
-              (save-excursion
-                (goto-char headline-pos)
-                (claude-multi--show-subtree-safe)))))
-      (setq claude-multi--status-update-in-progress nil))))
+        ;; Auto-expand drawer if agent is waiting for input
+        (when (and headline-pos content (string-match-p "WAITING FOR INPUT" content))
+          (save-excursion
+            (goto-char headline-pos)
+            (claude-multi--show-subtree-safe)))))))
 
 ;;;###autoload
-(defun claude-multi--watch-agent-status-file (agent)
-  "Watch AGENT's status.json file for changes and auto-update.
-Watches the agent's directory initially, then switches to watching
-the status.json file once it's created.
-If file-notify is not available, silently returns without setting up watch."
-  ;; Check if file-notify is available
-  (when (fboundp 'file-notify-add-watch)
-    (unless claude-multi--status-file-watches
-      (setq claude-multi--status-file-watches (make-hash-table :test 'equal)))
-    (unless claude-multi--status-watch-upgraded
-      (setq claude-multi--status-watch-upgraded (make-hash-table :test 'equal)))
-
-    (let* ((agent-id (claude-agent-id agent))
-           (agent-dir (or (claude-agent-worktree-path agent)
-                         (claude-agent-working-directory agent)
-                         default-directory))
-           (status-file (expand-file-name "status.json" agent-dir)))
-      ;; If status.json already exists, watch it directly
-      (if (file-exists-p status-file)
-          (progn
-            (puthash agent-id t claude-multi--status-watch-upgraded)
-            (puthash agent-id
-                     (file-notify-add-watch
-                      status-file
-                      '(change)
-                      (lambda (event)
-                        ;; Only process if the event is about status.json
-                        (when (string-match-p "status\\.json" (format "%s" event))
-                          (claude-multi--update-agent-status-display agent))))
-                     claude-multi--status-file-watches))
-        ;; Watch directory and upgrade to file watch when created
-        (puthash agent-id
-               (file-notify-add-watch
-                agent-dir
-                '(change)
-                (lambda (event)
-                  ;; Only process events related to status.json
-                  (when (and (string-match-p "status\\.json" (format "%s" event))
-                            (not (gethash agent-id claude-multi--status-watch-upgraded)))
-                    (if (file-exists-p status-file)
-                        (progn
-                          ;; Upgrade to watching the file directly
-                          (puthash agent-id t claude-multi--status-watch-upgraded)
-                          (let ((old-watch (gethash agent-id claude-multi--status-file-watches)))
-                            (when old-watch
-                              (file-notify-rm-watch old-watch))
-                            (puthash agent-id
-                                    (file-notify-add-watch
-                                     status-file
-                                     '(change)
-                                     (lambda (_event)
-                                       (claude-multi--update-agent-status-display agent)))
-                                    claude-multi--status-file-watches))
-                          (claude-multi--update-agent-status-display agent))
-                      ;; File doesn't exist yet, just update display
-                      (claude-multi--update-agent-status-display agent)))))
-               claude-multi--status-file-watches))
-      ;; Initial update
-      (claude-multi--update-agent-status-display agent))))
+(defun claude-multi--watch-agent-status-file (_agent)
+  "Stub for backward compatibility.
+Status watching is now handled by claude-multi-status.el."
+  nil)
 
 ;;;###autoload
-(defun claude-multi--stop-watching-agent-status (agent)
-  "Stop watching AGENT's status.json file."
-  (when claude-multi--status-file-watches
-    (let* ((agent-id (claude-agent-id agent))
-           (watch-desc (gethash agent-id claude-multi--status-file-watches)))
-      (when watch-desc
-        (file-notify-rm-watch watch-desc)
-        (remhash agent-id claude-multi--status-file-watches)
-        (when claude-multi--status-watch-upgraded
-          (remhash agent-id claude-multi--status-watch-upgraded))))))
+(defun claude-multi--stop-watching-agent-status (_agent)
+  "Stub for backward compatibility.
+Status watching is now handled by claude-multi-status.el."
+  nil)
 
 ;;;###autoload
 (defun claude-multi--stop-all-status-watches ()
-  "Stop all status file watches."
-  (when claude-multi--status-file-watches
-    (maphash (lambda (_agent-id watch-desc)
-              (file-notify-rm-watch watch-desc))
-            claude-multi--status-file-watches)
-    (clrhash claude-multi--status-file-watches))
-  (when claude-multi--status-watch-upgraded
-    (clrhash claude-multi--status-watch-upgraded)))
+  "Stub for backward compatibility.
+Status watching is now handled by claude-multi-status.el."
+  nil)
 
 (provide 'claude-multi-progress)
 ;;; progress.el ends here

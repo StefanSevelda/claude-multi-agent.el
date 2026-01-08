@@ -102,19 +102,24 @@ Attempts WebSocket reconnection if port is stored."
                  :id id
                  :name (plist-get plist :name)
                  :color (plist-get plist :color)
-                 :task-description (plist-get plist :task-description)
-                 :status status
                  :kitty-window-id (plist-get plist :kitty-window-id)
                  :kitty-tab-id (plist-get plist :kitty-tab-id)
+                 :context-buffer nil  ; Will be recreated if needed
+                 :status-timer nil    ; Will be recreated if needed
                  :worktree-path (plist-get plist :worktree-path)
                  :branch-name (plist-get plist :branch-name)
                  :working-directory (plist-get plist :working-directory)
+                 :status status
+                 :task-description (plist-get plist :task-description)
                  :created-at created-at
                  :completed-at completed-at
+                 :websocket-connection nil  ; Cannot be serialized
                  :communication-backend backend
                  :mcp-enabled (plist-get plist :mcp-enabled)
                  :session-id (plist-get plist :session-id)
-                 :mcp-request-counter (plist-get plist :mcp-request-counter))))
+                 :mcp-request-counter (plist-get plist :mcp-request-counter)
+                 :ediff-session nil  ; Will be recreated if needed
+                 :last-status-data nil)))
 
     ;; Check if kitty window still exists
     (when (and (claude-agent-kitty-window-id agent)

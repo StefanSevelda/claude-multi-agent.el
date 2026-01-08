@@ -11,6 +11,30 @@
 (require 'filenotify)
 (require 'json)
 
+;; Forward declarations
+(declare-function claude-agent-id "claude-multi-agents")
+(declare-function claude-agent-name "claude-multi-agents")
+(declare-function claude-agent-status "claude-multi-agents")
+(declare-function claude-agent-worktree-path "claude-multi-agents")
+(declare-function claude-agent-directory "claude-multi-agents")
+(declare-function claude-agent-session-id "claude-multi-agents")
+(declare-function claude-agent-created-at "claude-multi-agents")
+(declare-function claude-agent-completed-at "claude-multi-agents")
+(declare-function claude-agent-last-status-data "claude-multi-agents")
+(declare-function claude-multi--notify-input-needed "claude-multi-notifications")
+(declare-function claude-multi--get-status-icon "claude-multi-progress")
+(declare-function claude-multi--update-session-stats "claude-multi-progress")
+(declare-function claude-multi--update-session-from-status "claude-multi-progress")
+(declare-function claude-multi--insert-status-properties "claude-multi-progress")
+
+(defvar claude-multi--agents)
+(defvar claude-multi--progress-buffer)
+
+;; Accessors for cl-struct setf (indices based on claude-agent defstruct)
+(gv-define-setter claude-agent-session-id (val agent) `(aset ,agent 17 ,val))
+(gv-define-setter claude-agent-last-status-data (val agent) `(aset ,agent 20 ,val))
+(gv-define-setter claude-agent-status (val agent) `(aset ,agent 10 ,val))
+
 ;;; Variables
 
 (defvar claude-multi-status-directory "/tmp/claude-status/"
@@ -169,10 +193,7 @@ Adds to pending list until session-id is discovered from status file."
 (defun claude-multi--update-agent-from-status (agent status-data)
   "Update AGENT struct from STATUS-DATA."
   (let ((claude-status (alist-get 'claude_status status-data))
-        (waiting (alist-get 'waiting_for_input status-data))
-        (context-window (alist-get 'context_window status-data))
-        (git-info (alist-get 'git status-data))
-        (activity (alist-get 'current_activity status-data)))
+        (waiting (alist-get 'waiting_for_input status-data)))
 
     ;; Store last status data
     (setf (claude-agent-last-status-data agent) status-data)

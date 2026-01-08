@@ -216,6 +216,7 @@ Used for round-robin split placement or intelligent tab management.")
                                                (file-name-directory byte-compile-current-file))
                                           default-directory))))
   (add-to-list 'load-path autoload-dir)
+  (require 'claude-multi-status)       ; File-based status tracking (must be loaded first)
   (require 'claude-multi-agents)
   (require 'claude-multi-progress)
   (require 'claude-multi-worktree)
@@ -446,8 +447,9 @@ ACTION-FN is called with point at the beginning of each headline."
     (setq claude-multi--agents nil)
     ;; Teardown notification system
     (claude-multi--teardown-notifications)
-    ;; Stop all status file watches
-    (claude-multi--stop-all-status-watches)
+    ;; Cleanup status tracking
+    (when (fboundp 'claude-multi--cleanup-status-tracking)
+      (claude-multi--cleanup-status-tracking))
     ;; Close session OS window if it exists
     (when claude-multi--current-session-window-id
       (let ((listen-addr (or claude-multi-kitty-listen-address

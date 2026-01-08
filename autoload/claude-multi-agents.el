@@ -12,11 +12,11 @@
   (require 'subr-x))  ; For string-trim
 
 ;; Forward declarations for functions in other modules
-(declare-function claude-multi--stop-watching-agent-status "claude-multi-progress")
 (declare-function claude-multi--update-agent-status "claude-multi-progress")
 (declare-function claude-multi--add-agent-section "claude-multi-progress")
 (declare-function claude-multi--update-session-stats "claude-multi-progress")
-(declare-function claude-multi--watch-agent-status-file "claude-multi-progress")
+(declare-function claude-multi--register-agent-for-status "claude-multi-status")
+(declare-function claude-multi--unregister-agent-for-status "claude-multi-status")
 (declare-function claude-multi--build-worktree-command "claude-multi-worktree")
 (declare-function claude-multi--in-git-repo-p "claude-multi-worktree")
 (declare-function claude-multi--get-git-root "claude-multi-worktree")
@@ -62,7 +62,8 @@
   mcp-enabled           ; Whether MCP protocol is enabled for this agent (boolean)
   session-id            ; Session identifier for persistence (string or nil)
   mcp-request-counter   ; Counter for MCP request IDs (integer)
-  ediff-session)        ; Ediff session data for code review (plist or nil)
+  ediff-session         ; Ediff session data for code review (plist or nil)
+  last-status-data)     ; Last status data received from file-based tracking (alist or nil)
 
 ;;; Agent creation
 
@@ -265,8 +266,9 @@ Returns a plist with :name, :color, :text, :bg properties."
           ;; Update session statistics (agent counts)
           (claude-multi--update-session-stats)
 
-          ;; Start watching agent's status.md file
-          (claude-multi--watch-agent-status-file agent)))
+          ;; Register agent for file-based status tracking
+          (when (fboundp 'claude-multi--register-agent-for-status)
+            (claude-multi--register-agent-for-status agent))))
 
     (error
      (setf (claude-agent-status agent) 'failed)
@@ -373,8 +375,9 @@ Uses WebSocket if available, falls back to polling if configured."
     (when-let ((timer (claude-agent-status-timer agent)))
       (cancel-timer timer))
 
-    ;; Stop watching agent's status file
-    (claude-multi--stop-watching-agent-status agent)
+    ;; Unregister from file-based status tracking
+    (when (fboundp 'claude-multi--unregister-agent-for-status)
+      (claude-multi--unregister-agent-for-status agent))
 
     ;; Close kitty window
     (let* ((window-id (claude-agent-kitty-window-id agent))
