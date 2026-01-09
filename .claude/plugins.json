@@ -1,5 +1,3 @@
 {
-  "plugins": [
-    "elisp-lsp@elisp-lsp-marketplace"
-  ]
+  "plugins": []
 }

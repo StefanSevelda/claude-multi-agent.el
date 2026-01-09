@@ -214,11 +214,13 @@ Used for round-robin split placement or intelligent tab management.")
 ;;; Load autoload modules NOW that all variables are defined
 (let ((autoload-dir (expand-file-name "autoload"
                                       (or (and load-file-name
-                                               (file-name-directory load-file-name))
+                                               ;; Resolve symlinks to get the real path
+                                               (file-name-directory (file-truename load-file-name)))
                                           (and (boundp 'byte-compile-current-file)
                                                byte-compile-current-file
-                                               (file-name-directory byte-compile-current-file))
+                                               (file-name-directory (file-truename byte-compile-current-file)))
                                           default-directory))))
+  (message ">>> CLAUDE-MULTI: Adding autoload directory to load-path: %s" autoload-dir)
   (add-to-list 'load-path autoload-dir)
   (require 'claude-multi-status)       ; File-based status tracking (must be loaded first)
   (require 'claude-multi-agents)
@@ -247,6 +249,16 @@ Used for round-robin split placement or intelligent tab management.")
   (setq claude-multi--agent-id-counter 0)
   (setq claude-multi--current-session-window-id nil)
   (setq claude-multi--current-session-tab-ids nil)
+  ;; Clean up stale status files older than 1 hour
+  (when (and (boundp 'claude-multi-status-directory)
+             (file-exists-p claude-multi-status-directory))
+    (let ((now (float-time))
+          (max-age-seconds 3600))  ; 1 hour
+      (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
+        (let* ((file-mtime (float-time (nth 5 (file-attributes file))))
+               (age-seconds (- now file-mtime)))
+          (when (> age-seconds max-age-seconds)
+            (ignore-errors (delete-file file)))))))
   ;; Setup notification system
   (claude-multi--setup-notifications)
   ;; Open progress buffer
