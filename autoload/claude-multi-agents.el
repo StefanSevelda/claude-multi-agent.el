@@ -251,6 +251,7 @@ Returns a plist with :name, :color, :text, :bg properties."
           ;; Wrap Claude launch in a shell that ensures KITTY_WINDOW_ID is exported
           (let ((use-wt use-worktree-p)  ; Capture for lambda closure
                 (agt agent)  ; Capture agent reference
+                (wid window-id)  ; Capture window ID for export
                 ;; Capture git context before timer (default-directory may change)
                 (repo-root (when use-worktree-p (claude-multi--get-git-root)))
                 (worktree-path (claude-agent-worktree-path agent))
@@ -262,7 +263,7 @@ Returns a plist with :name, :color, :text, :bg properties."
                              (if use-wt
                                  ;; Build and send worktree creation command chain
                                  (let ((command (claude-multi--build-worktree-command
-                                                agt repo-root worktree-path branch-name)))
+                                                agt repo-root worktree-path branch-name wid)))
                                   (claude-multi--send-to-kitty agt command))
                                ;; No worktree - cd to working directory then start Claude
                                ;; Ensure KITTY_WINDOW_ID is exported so Claude hooks can use it
@@ -270,12 +271,13 @@ Returns a plist with :name, :color, :text, :bg properties."
                                  (if (and dir (stringp dir))
                                      (claude-multi--send-to-kitty
                                       agt
-                                      (format "export KITTY_WINDOW_ID && cd %s && %s"
+                                      (format "export KITTY_WINDOW_ID=%s && cd %s && %s"
+                                              wid
                                               (shell-quote-argument (expand-file-name dir))
                                               claude-multi-claude-command))
                                    (claude-multi--send-to-kitty
                                     agt
-                                    (format "export KITTY_WINDOW_ID && %s" claude-multi-claude-command))))))))
+                                    (format "export KITTY_WINDOW_ID=%s && %s" wid claude-multi-claude-command))))))))
 
           ;; Update progress buffer
           (claude-multi--add-agent-section agent)

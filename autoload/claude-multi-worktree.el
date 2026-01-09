@@ -64,11 +64,12 @@
 ;;; Worktree creation
 
 ;;;###autoload
-(defun claude-multi--build-worktree-command (_agent repo-root worktree-path branch-name)
+(defun claude-multi--build-worktree-command (_agent repo-root worktree-path branch-name window-id)
   "Build shell command to create worktree for AGENT in kitty terminal.
 REPO-ROOT is the git repository root directory.
 WORKTREE-PATH is the target path for the worktree.
 BRANCH-NAME is the branch name for the worktree.
+WINDOW-ID is the kitty window ID to export as KITTY_WINDOW_ID.
 Returns a shell command string that creates the worktree and starts Claude."
   (let* ((default-directory repo-root)  ; Set context for git commands
          (default-branch (claude-multi--get-default-branch))
@@ -87,7 +88,8 @@ Returns a shell command string that creates the worktree and starts Claude."
          (worktree-parent (file-name-directory worktree-path)))
     ;; Build the complete command chain
     ;; Note: gwt likely creates parent directories, but git worktree add doesn't
-    (format "cd '%s' && git fetch origin %s && git rebase origin/%s && (gwt '%s' || (mkdir -p '%s' && %s)) && cd '%s' && %s"
+    ;; Export KITTY_WINDOW_ID so Claude hooks can access it
+    (format "cd '%s' && git fetch origin %s && git rebase origin/%s && (gwt '%s' || (mkdir -p '%s' && %s)) && cd '%s' && export KITTY_WINDOW_ID=%s && %s"
            repo-root
            default-branch
            default-branch
@@ -95,6 +97,7 @@ Returns a shell command string that creates the worktree and starts Claude."
            worktree-parent
            git-worktree-cmd
            worktree-path
+           window-id
            claude-cmd)))
 
 ;;;###autoload
