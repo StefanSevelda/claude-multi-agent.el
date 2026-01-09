@@ -669,14 +669,14 @@ The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
                                         (claude-multi--agent-is-pending-p agent))))
                     (if pending-p
                         (insert "/Waiting for status file (agent in pending state).../\n")
-                      (insert "/Waiting for first status update.../\n")))))
+                      (insert "/Waiting for first status update.../\n"))))
 
                 ;; Find the headline position for this agent
                 (goto-char (point-min))
                 (when (re-search-forward
                        (format "^\\*\\* .* %s" (regexp-quote (claude-agent-id agent)))
                        nil t)
-                  (setq headline-pos (line-beginning-position)))))))
+                  (setq headline-pos (line-beginning-position))))))))
 
         ;; Auto-expand drawer if agent is waiting for input
         (when (and headline-pos content (string-match-p "WAITING FOR INPUT" content))
