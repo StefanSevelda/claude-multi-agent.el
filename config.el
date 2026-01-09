@@ -222,21 +222,38 @@ Used for round-robin split placement or intelligent tab management.")
                                           default-directory))))
   (message ">>> CLAUDE-MULTI: Adding autoload directory to load-path: %s" autoload-dir)
   (add-to-list 'load-path autoload-dir)
-  (require 'claude-multi-status)       ; File-based status tracking (must be loaded first)
-  (require 'claude-multi-agents)
-  (require 'claude-multi-progress)
-  (require 'claude-multi-worktree)
-  (require 'claude-multi-notifications)
+
+  ;; Use load instead of require for more reliable loading
+  (message ">>> CLAUDE-MULTI: Loading status module...")
+  (load (expand-file-name "claude-multi-status.el" autoload-dir) nil t)
+  (message ">>> CLAUDE-MULTI: Loading agents module...")
+  (load (expand-file-name "claude-multi-agents.el" autoload-dir) nil t)
+  (message ">>> CLAUDE-MULTI: Loading progress module...")
+  (load (expand-file-name "claude-multi-progress.el" autoload-dir) nil t)
+  (message ">>> CLAUDE-MULTI: Loading worktree module...")
+  (load (expand-file-name "claude-multi-worktree.el" autoload-dir) nil t)
+  (message ">>> CLAUDE-MULTI: Loading notifications module...")
+  (load (expand-file-name "claude-multi-notifications.el" autoload-dir) nil t)
+
   ;; WebSocket support (optional - only loads if websocket package available)
   (when (and claude-multi-websocket-enabled
              (require 'websocket nil t))
-    (require 'claude-multi-websocket))
+    (message ">>> CLAUDE-MULTI: Loading websocket module...")
+    (load (expand-file-name "claude-multi-websocket.el" autoload-dir) nil t))
+
   ;; MCP Protocol
-  (require 'claude-multi-mcp)
+  (message ">>> CLAUDE-MULTI: Loading MCP module...")
+  (load (expand-file-name "claude-multi-mcp.el" autoload-dir) nil t)
+
   ;; Ediff Integration
-  (require 'claude-multi-ediff)
+  (message ">>> CLAUDE-MULTI: Loading ediff module...")
+  (load (expand-file-name "claude-multi-ediff.el" autoload-dir) nil t)
+
   ;; Session persistence
-  (require 'claude-multi-session))
+  (message ">>> CLAUDE-MULTI: Loading session module...")
+  (load (expand-file-name "claude-multi-session.el" autoload-dir) nil t)
+
+  (message ">>> CLAUDE-MULTI: All modules loaded successfully"))
 
 ;; Interactive commands
 

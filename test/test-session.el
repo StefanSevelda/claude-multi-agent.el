@@ -230,7 +230,7 @@
              (data (with-temp-buffer
                     (insert-file-contents filepath)
                     (read (current-buffer)))))
-        (expect (plist-get data :version) :to-equal "1.0")
+        (expect (plist-get data :version) :to-equal "1.1")
         (expect (plist-get data :timestamp) :to-be-truthy)
         (expect (length (plist-get data :agents)) :to-equal 1)
         (expect (plist-get (plist-get data :global-state) :agent-id-counter)
@@ -316,7 +316,7 @@
     ;; Create an old session by creating a file with old timestamp
     (let* ((old-file (expand-file-name "session-2020-01-01-120000.el"
                                        claude-multi-session-directory))
-           (old-data '(:version "1.0" :timestamp "2020-01-01" :agents nil))
+           (old-data '(:version "1.1" :timestamp "2020-01-01" :agents nil))
            (old-time (encode-time 0 0 0 1 1 2020)))  ; Jan 1, 2020
       (with-temp-file old-file
         (prin1 old-data (current-buffer)))
@@ -341,7 +341,7 @@
   (it "does not cleanup when retention is 0"
     (let* ((old-file (expand-file-name "session-2020-01-01-120000.el"
                                        claude-multi-session-directory))
-           (old-data '(:version "1.0" :timestamp "2020-01-01" :agents nil)))
+           (old-data '(:version "1.1" :timestamp "2020-01-01" :agents nil)))
       (with-temp-file old-file
         (prin1 old-data (current-buffer)))
       (setq claude-multi-session-retention-days 0)
