@@ -149,6 +149,75 @@ Since the variables are already defined when your module loads, you can set them
 - Keep only the symlink in `modules/tools/`
 - Let Doom's module system handle loading
 
+### 6. Keybinding Configuration
+
+**CRITICAL: Use `use-package!` with `:config` block for keybindings.**
+
+After studying official Doom modules (vertico, magit), the correct pattern is:
+
+```elisp
+;; In config.el
+(use-package! evil
+  :config
+  (map! :leader
+        :prefix ("c m" . "claude-multi")
+        :desc "Start session" "s" #'claude-multi/start-session
+        :desc "Spawn agent"   "a" #'claude-multi/spawn-agent))
+```
+
+**Why this works:**
+- The `:config` block runs AFTER evil is fully loaded
+- This ensures the leader key is set up before our keybindings
+- This is exactly how official Doom modules define keybindings
+
+**Common mistakes (DON'T do these):**
+
+❌ **WRONG - Top-level `after!` doesn't work reliably:**
+```elisp
+;; This may not execute at the right time during startup
+(after! evil
+  (map! :leader ...))
+```
+
+❌ **WRONG - `+bindings.el` is NOT a Doom convention:**
+```elisp
+;; +bindings.el  <-- This file is not automatically loaded by Doom
+(map! :leader ...)
+```
+
+❌ **WRONG - Conditional loading with `featurep`:**
+```elisp
+;; Complex and unreliable
+(if (featurep 'doom-keybinds)
+    (setup-keybindings)
+  (with-eval-after-load ...))
+```
+
+**✅ CORRECT - Simple `use-package!` `:config`:**
+```elisp
+(use-package! evil
+  :config
+  (map! :leader
+        :prefix ("c m" . "my-module")
+        :desc "Command" "c" #'my-command))
+```
+
+**Key insights from Doom source code:**
+1. Doom modules use `use-package!` for configuration
+2. Keybindings go in `:config` blocks (runs after package loads)
+3. No special files needed - just put it in `config.el`
+4. The `use-package!` macro handles load order automatically
+
+**Verification:**
+```elisp
+;; Check if keybindings are registered
+(lookup-key doom-leader-map (kbd "c m"))
+;; Should return a keymap, not nil
+
+;; Manually reload if needed
+(load-file "~/.doom.d/modules/tools/claude-multi/config.el")
+```
+
 ## Development Workflow
 
 ### One-Time Setup
