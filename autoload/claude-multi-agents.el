@@ -180,7 +180,7 @@ Returns a plist with :name, :color, :text, :bg properties."
                                    (fboundp 'claude-multi-ws--get-port-env)
                                    (claude-multi-ws--get-port-env))
                                (format " --env=CLAUDE_WS_PORT=%s" (claude-multi-ws--get-port-env))
-                             ""))))
+                             "")))
                ;; Launch kitty and get window ID
                (launch-output
                 (shell-command-to-string
@@ -273,7 +273,7 @@ Returns a plist with :name, :color, :text, :bg properties."
 
           ;; No need to register agent - status files are discovered automatically
           ;; by watching /tmp/claude-status/ directory
-          )
+          ))
 
     (error
      (setf (claude-agent-status agent) 'failed)
