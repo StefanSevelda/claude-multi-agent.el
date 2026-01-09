@@ -227,7 +227,31 @@ Monitor Output (eshell-output-filter-functions)
 
 The project includes a comprehensive test suite using [[https://github.com/jorgenschaefer/emacs-buttercup][Buttercup]] (BDD-style testing framework).
 
-**** Running Tests
+**** Syntax Validation Tests (Recommended First)
+
+Before committing changes to =autoload/claude-multi-status.el=, run the fast syntax validation tests:
+
+#+begin_src shell
+./test/run-syntax-tests.sh
+#+end_src
+
+These tests verify:
+- ✅ Parenthesis balance in all functions
+- ✅ Module loads without syntax errors
+- ✅ All critical functions are defined
+- ✅ Byte compilation succeeds
+- ✅ Functions execute without errors
+
+*Installing the Pre-Commit Hook:*
+
+#+begin_src shell
+cp git-hooks/pre-commit .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+#+end_src
+
+This will automatically run syntax tests before each commit that modifies =claude-multi-status.el=.
+
+**** Running All Tests
 
 #+begin_src shell
 # Install test dependencies (first time only)
@@ -242,13 +266,21 @@ make clean
 
 **** Test Coverage
 
-The test suite includes 29 tests across three categories:
+The test suite includes comprehensive coverage across multiple categories:
 
+**Syntax Validation (Fast - Run First)**
+- *5 parenthesis balance tests* - Prevents unclosed s-expressions
+- *3 function-specific tests* - Tests the 3 functions that had issues
+- *4 byte compilation tests* - Ensures clean compilation
+- Runs in ~1 second
+
+**Integration Tests**
 - *7 smoke tests* - Basic functionality verification
 - *7 kitty integration tests* - Terminal management and agent lifecycle
 - *15 drawer core logic tests* - Progress buffer and visibility controls
+- Runs in <300ms without hanging
 
-All tests run in <300ms without hanging, thanks to the separation of core logic from display functions.
+All integration tests run fast thanks to the separation of core logic from display functions.
 
 **** Continuous Integration
 
@@ -268,12 +300,24 @@ make lint              # Check syntax and style
 
 Tests are located in the =test/= directory:
 
+**Syntax Validation:**
+- =test/run-syntax-tests.sh= - Fast standalone syntax validator
+- =test/test-status-syntax.el= - Buttercup syntax validation suite
+- =git-hooks/pre-commit= - Pre-commit hook template
+
+**Integration Tests:**
 - =test/test-simple.el= - Basic smoke tests
 - =test/test-kitty-integration.el= - Kitty terminal integration
 - =test/test-drawer-core-logic.el= - Progress buffer drawer visibility
+- =test/test-status-tracking.el= - Agent status tracking tests
+- =test/test-multi-agent-same-dir.el= - Multiple agents in same directory
 - =test/test-helper.el= - Test utilities and mocks
 
 #+begin_src shell
+# Run syntax validation first
+./test/run-syntax-tests.sh
+
+# Then run full test suite
 make test
 #+end_src
 

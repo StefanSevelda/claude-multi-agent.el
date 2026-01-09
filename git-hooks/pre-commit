@@ -1,0 +1,23 @@
+#!/bin/bash
+# Pre-commit hook to run syntax validation tests
+# Install: cp git-hooks/pre-commit .git/hooks/pre-commit && chmod +x .git/hooks/pre-commit
+
+# Check if autoload/claude-multi-status.el is being committed
+if git diff --cached --name-only | grep -q "autoload/claude-multi-status.el"; then
+    echo "Running syntax validation tests for claude-multi-status.el..."
+
+    if ! ./test/run-syntax-tests.sh > /tmp/pre-commit-test.log 2>&1; then
+        echo ""
+        echo "❌ Syntax validation tests FAILED!"
+        echo ""
+        echo "Please fix the errors before committing:"
+        cat /tmp/pre-commit-test.log
+        echo ""
+        echo "To skip this check, use: git commit --no-verify"
+        exit 1
+    fi
+
+    echo "✅ Syntax validation tests passed!"
+fi
+
+exit 0
