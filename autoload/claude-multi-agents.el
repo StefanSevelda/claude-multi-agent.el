@@ -189,7 +189,13 @@ Returns a plist with :name, :color, :text, :bg properties."
                         env-clause-base
                         (shell-quote-argument starting-dir)
                         session-name)))
-               (window-id (string-trim launch-output)))
+               (window-id (string-trim launch-output))
+               ;; Set KITTY_WINDOW_ID in the window so hooks can access it
+               (_ (when (and window-id (not (string-empty-p window-id)))
+                    (call-process-shell-command
+                     (format "kitty @ --to=%s send-text --match=id:%s 'export KITTY_WINDOW_ID=%s\n'"
+                            listen-addr window-id window-id)
+                     nil 0))))
 
           ;; Store session window ID if this is the first agent
           (when is-first-agent
