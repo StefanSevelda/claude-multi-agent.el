@@ -562,7 +562,10 @@ Works with both in-memory agents and persistent sessions from status files."
 (declare-function org-indent-mode "org-indent")  ; Defined in org-indent.el
 
 (define-derived-mode claude-multi-progress-mode org-mode "Claude-Multi-Progress"
-  "Major mode for Claude Multi-Agent progress tracking in org-mode format."
+  "Major mode for Claude Multi-Agent progress tracking in org-mode format.
+
+Keybindings:
+  \\[claude-multi/focus-agent-at-point] - Focus on agent at point"
   (setq-local auto-revert-interval 0.5)
   (auto-revert-mode 1)
   (read-only-mode 1)
@@ -570,6 +573,10 @@ Works with both in-memory agents and persistent sessions from status files."
   (when (fboundp 'org-indent-mode)
     (org-indent-mode 1))
   (visual-line-mode 1))
+
+;; Add keybinding for focus-agent-at-point in progress mode
+(define-key claude-multi-progress-mode-map (kbd "RET") 'claude-multi/focus-agent-at-point)
+(define-key claude-multi-progress-mode-map (kbd "f") 'claude-multi/focus-agent-at-point)
 
 ;; Keybindings
 ;; Following https://rameezkhan.me/posts/2020/2020-07-03--adding-keybindings-to-doom-emacs/

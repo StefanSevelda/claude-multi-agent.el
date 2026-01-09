@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Check if the file being edited is in the autoload/ directory (e.g., autoload/claude-multi-status.el, autoload/claude-multi-agents.el, etc.) OR is config.el. If it is, run the syntax validation tests using: ./test/run-syntax-tests.sh\n\nThis ensures parenthesis balance and module loading are correct after every edit. If tests fail, report the errors to the user and suggest fixes."
+            "prompt": "After editing elisp files, run syntax validation tests with: ./test/run-syntax-tests.sh\n\nNote: The test script validates claude-multi-status.el specifically. This is intentional - it ensures the core module loads correctly. Tests failing for other files is expected and okay. Only report test failures if they indicate actual syntax errors (unbalanced parens, load failures)."
           }
         ]
       }

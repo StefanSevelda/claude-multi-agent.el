@@ -19,6 +19,8 @@
 (declare-function claude-multi--detect-input-request "claude-multi-notifications")
 (declare-function claude-multi--format-duration "claude-multi-agents")
 (declare-function claude-multi--get-cached-status "claude-multi-status")
+(declare-function claude-multi--read-agent-mapping "claude-multi-status")
+(declare-function claude-multi--get-all-agent-mappings "claude-multi-status")
 (declare-function claude-agent-id "claude-multi-agents")
 (declare-function claude-agent-status "claude-multi-agents")
 (declare-function claude-agent-color "claude-multi-agents")
@@ -837,6 +839,66 @@ Status watching is now handled by claude-multi-status.el."
   "Stub for backward compatibility.
 Status watching is now handled by claude-multi-status.el."
   nil)
+
+;;; Focus agent at point
+
+;;;###autoload
+(defun claude-multi--get-agent-info-at-point ()
+  "Get agent information from org headline at point.
+Returns plist with :session-id, :kitty-window, :agent-name, :directory, :display-name."
+  (when (derived-mode-p 'org-mode)
+    (save-excursion
+      ;; Move to the headline
+      (org-back-to-heading t)
+      (let* ((session-id (org-entry-get nil "SESSION_ID"))
+             (kitty-window (org-entry-get nil "KITTY_WINDOW"))
+             (directory (org-entry-get nil "DIRECTORY"))
+             (agent-name (org-entry-get nil "AGENT_NAME"))
+             ;; Extract display name from headline
+             (headline (org-get-heading t t t t))
+             (display-name (when headline
+                            ;; Remove status icon and extract name
+                            (if (string-match "^[^[:alnum:]]*\\([^[]+\\)" headline)
+                                (string-trim (match-string 1 headline))
+                              headline))))
+        (when (or session-id agent-name)
+          (list :session-id session-id
+                :kitty-window kitty-window
+                :agent-name agent-name
+                :directory directory
+                :display-name (or display-name agent-name directory session-id)))))))
+
+;;;###autoload
+(defun claude-multi/focus-agent-at-point ()
+  "Focus on the agent at point in the progress buffer.
+Reads the org-mode properties to determine which kitty window to focus."
+  (interactive)
+  (let ((agent-info (claude-multi--get-agent-info-at-point)))
+    (if (not agent-info)
+        (message "No agent found at point. Place cursor on an agent headline.")
+      (let* ((kitty-window (plist-get agent-info :kitty-window))
+             (agent-name (plist-get agent-info :agent-name))
+             (display-name (plist-get agent-info :display-name))
+             ;; Try to get window ID from property first, then from mapping
+             (window-id (or kitty-window
+                           (when agent-name
+                             (claude-multi--read-agent-mapping agent-name))))
+             (listen-addr (or (and (boundp 'claude-multi-kitty-listen-address)
+                                  claude-multi-kitty-listen-address)
+                             (getenv "KITTY_LISTEN_ON")
+                             "unix:/tmp/kitty-claude")))
+        (if (not window-id)
+            (message "No kitty window ID found for %s. Agent may not have been spawned yet or mapping is missing."
+                    display-name)
+          (condition-case err
+              (progn
+                (call-process-shell-command
+                 (format "kitty @ --to=%s focus-window --match=id:%s"
+                        listen-addr window-id)
+                 nil 0)
+                (message "Focused on %s (window %s)" display-name window-id))
+            (error
+             (message "Failed to focus window %s: %s" window-id (error-message-string err)))))))))
 
 (provide 'claude-multi-progress)
 ;;; progress.el ends here
