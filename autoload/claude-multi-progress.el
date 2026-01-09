@@ -133,6 +133,7 @@
               ;; Update stats
               (claude-multi--update-session-stats-from-files status-files)))))))
 
+;;;###autoload
 (defun claude-multi--get-status-icon-from-string (status-str)
   "Return icon emoji for STATUS-STR."
   (pcase status-str
@@ -142,6 +143,7 @@
     ("error" "🔴")
     (_ "⚪")))
 
+;;;###autoload
 (defun claude-multi--update-session-stats-from-files (status-files)
   "Update session statistics line from STATUS-FILES."
   (let ((total (length status-files))

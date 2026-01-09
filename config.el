@@ -353,7 +353,12 @@ Agent will cd into the worktree directory before launching Claude."
     (claude-multi-progress-mode)
     (unless (get-buffer-window claude-multi--progress-buffer)
       (display-buffer claude-multi--progress-buffer)))
-  (claude-multi--init-progress-buffer))
+  (claude-multi--init-progress-buffer)
+  ;; Start directory watcher and refresh from status files
+  (when (fboundp 'claude-multi--start-directory-watcher)
+    (claude-multi--start-directory-watcher))
+  (when (fboundp 'claude-multi--refresh-progress-from-status-files)
+    (claude-multi--refresh-progress-from-status-files)))
 
 ;;;###autoload
 (defun claude-multi/dashboard ()
