@@ -451,7 +451,7 @@ the same status data."
 (defun claude-multi--get-cached-status (agent)
   "Get cached status data for AGENT."
   (when-let ((session-id (claude-agent-session-id agent)))
-    (gethash session-id claude-multi--status-cache)))))
+    (gethash session-id claude-multi--status-cache)))
 
 (provide 'claude-multi-status)
 ;;; claude-multi-status.el ends here
