@@ -107,7 +107,7 @@
                           (delq agent claude-multi--pending-agents))
                     (claude-multi--update-agent-from-status agent status-data)
                     ;; Exit the file loop once we found a match for this agent
-                    (throw 'matched t))))))))
+                    (throw 'matched t)))))))))))
 
 ;;; Directory watcher
 
@@ -418,7 +418,7 @@ This removes stale status files from previous sessions."
         (message "Cleaned up %d status file%s from %s"
                  count
                  (if (= count 1) "" "s")
-                 claude-multi-status-directory))))))
+                 claude-multi-status-directory)))))
 
 ;;;###autoload
 (defun claude-multi/reset-agent-mappings ()
