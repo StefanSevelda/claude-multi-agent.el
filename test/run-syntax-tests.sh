@@ -51,10 +51,12 @@ emacs -batch --eval '(progn
   (let ((missing nil)
         (functions (quote (claude-multi--start-directory-watcher
                           claude-multi--stop-directory-watcher
-                          claude-multi--register-agent-for-status
-                          claude-multi--rescan-pending-agents
+                          claude-multi--handle-directory-event
+                          claude-multi--read-status-file
+                          claude-multi--status-file-path
+                          claude-multi--get-all-status-files
                           claude-multi/cleanup-status-files
-                          claude-multi/reset-agent-mappings))))
+                          claude-multi--cleanup-status-tracking))))
     (dolist (func functions)
       (if (fboundp func)
           (message "  ✓ %s" func)
@@ -81,16 +83,19 @@ echo "Test 5: Testing Specific Functions"
 emacs -batch --eval '(progn
   (load-file "autoload/claude-multi-status.el")
 
-  ;; Test rescan function
-  (message "  Testing claude-multi--rescan-pending-agents...")
-  (setq claude-multi--pending-agents nil)
-  (condition-case err
-      (progn
-        (claude-multi--rescan-pending-agents)
-        (message "    ✓ Executes without error"))
-    (error
-      (message "    ✗ Error: %s" err)
-      (kill-emacs 1)))
+  ;; Test get-all-status-files function
+  (message "  Testing claude-multi--get-all-status-files...")
+  (let ((test-dir (make-temp-file "claude-status-test-" t)))
+    (setq claude-multi-status-directory test-dir)
+    (condition-case err
+        (progn
+          (claude-multi--get-all-status-files)
+          (message "    ✓ Executes without error")
+          (delete-directory test-dir))
+      (error
+        (delete-directory test-dir t)
+        (message "    ✗ Error: %s" err)
+        (kill-emacs 1))))
 
   ;; Test cleanup function
   (message "  Testing claude-multi/cleanup-status-files...")
@@ -103,12 +108,11 @@ emacs -batch --eval '(progn
       (message "    ✗ Error: %s" err)
       (kill-emacs 1)))
 
-  ;; Test reset function
-  (message "  Testing claude-multi/reset-agent-mappings...")
-  (setq claude-multi--agents nil)
+  ;; Test handle-directory-event function
+  (message "  Testing claude-multi--handle-directory-event...")
   (condition-case err
       (progn
-        (claude-multi/reset-agent-mappings)
+        (claude-multi--handle-directory-event (quote (nil created "/tmp/claude-status/status-test.json")))
         (message "    ✓ Executes without error"))
     (error
       (message "    ✗ Error: %s" err)

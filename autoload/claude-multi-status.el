@@ -78,18 +78,18 @@
                     claude-multi-status-directory))
 
 (defun claude-multi--get-all-status-files ()
-  "Return list of (FILE . STATUS-DATA) pairs sorted by timestamp (newest first)."
+  "Return list of (FILE . STATUS-DATA) pairs sorted by creation time (oldest first)."
   (let ((files (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
         (status-list nil))
     (dolist (file files)
       (when-let ((data (claude-multi--read-status-file file)))
         (push (cons file data) status-list)))
-    ;; Sort by timestamp descending (newest first)
+    ;; Sort by creation time (oldest first) for stable ordering
     (sort status-list
           (lambda (a b)
-            (let ((time-a (alist-get 'timestamp (cdr a)))
-                  (time-b (alist-get 'timestamp (cdr b))))
-              (string> (or time-a "") (or time-b "")))))))
+            (let ((started-a (alist-get 'session_started (cdr a)))
+                  (started-b (alist-get 'session_started (cdr b))))
+              (string< (or started-a "") (or started-b "")))))))
 
 ;;; Cleanup
 
