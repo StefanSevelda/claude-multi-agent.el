@@ -129,12 +129,24 @@
                          (model (alist-get 'model_name data))
                          (mode (alist-get 'claude_mode data))
                          (context (alist-get 'context_window data))
-                         (git (alist-get 'git data)))
+                         (git (alist-get 'git data))
+                         ;; Build descriptive name from directory and branch
+                         (dir-name (when cwd (file-name-nondirectory (directory-file-name cwd))))
+                         (branch (when git (alist-get 'branch git)))
+                         (display-name (cond
+                                        ;; Use agent name if explicitly set
+                                        (agent-name agent-name)
+                                        ;; Use directory + branch if available
+                                        ((and dir-name branch) (format "%s (%s)" dir-name branch))
+                                        ;; Use directory only
+                                        (dir-name dir-name)
+                                        ;; Fallback to session ID
+                                        (t (format "Session %s" (substring session-id 0 8))))))
 
                     ;; Insert session header
                     (insert (format "** %s %s\n"
                                    (claude-multi--get-status-icon-from-string status)
-                                   (or agent-name (format "Session %s" (substring session-id 0 8)))))
+                                   display-name))
 
                     ;; Insert properties drawer
                     (insert ":PROPERTIES:\n")
