@@ -55,6 +55,55 @@
 (defvar claude-multi--pending-agents nil
   "List of agents waiting for session-id discovery.")
 
+(defvar claude-multi-status-debug nil
+  "When non-nil, log status matching attempts to *claude-multi-status-debug* buffer.")
+
+(defvar claude-multi--pending-rescan-timer nil
+  "Timer for periodically rescanning pending agents.")
+
+(defun claude-multi--log-status-debug (format-string &rest args)
+  "Log debug message to status debug buffer if debugging enabled."
+  (when claude-multi-status-debug
+    (with-current-buffer (get-buffer-create "*claude-multi-status-debug*")
+      (goto-char (point-max))
+      (insert (format "[%s] " (format-time-string "%H:%M:%S")))
+      (insert (apply #'format format-string args))
+      (insert "\n"))))
+
+(defun claude-multi--agent-is-pending-p (agent)
+  "Return t if AGENT is in pending list waiting for status file match."
+  (memq agent claude-multi--pending-agents))
+
+(defun claude-multi--start-pending-rescan-timer ()
+  "Start timer to periodically try matching pending agents."
+  (unless claude-multi--pending-rescan-timer
+    (setq claude-multi--pending-rescan-timer
+          (run-with-timer 10 10 #'claude-multi--rescan-pending-agents))))
+
+(defun claude-multi--rescan-pending-agents ()
+  "Try to match pending agents to status files."
+  (when claude-multi--pending-agents
+    (claude-multi--log-status-debug "Re-scanning %d pending agent(s)" (length claude-multi--pending-agents))
+    (dolist (agent claude-multi--pending-agents)
+      (let ((agent-path (or (claude-agent-worktree-path agent)
+                            (claude-agent-working-directory agent)
+                            default-directory)))
+        (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
+          (let ((status-data (claude-multi--read-status-file file)))
+            (when status-data
+              (let ((cwd (alist-get 'cwd status-data)))
+                (when (and cwd agent-path
+                           (string= (claude-multi--normalize-path cwd)
+                                    (claude-multi--normalize-path agent-path)))
+                  (let ((session-id (alist-get 'session_id status-data)))
+                    (claude-multi--log-status-debug "  Re-scan MATCHED agent %s to session %s"
+                                                    (claude-agent-name agent) session-id)
+                    (setf (claude-agent-session-id agent) session-id)
+                    (puthash session-id agent claude-multi--session-to-agent)
+                    (setq claude-multi--pending-agents
+                          (delq agent claude-multi--pending-agents))
+                    (claude-multi--update-agent-from-status agent status-data)))))))))))
+
 ;;; Directory watcher
 
 ;;;###autoload
@@ -170,23 +219,38 @@
   "Register AGENT for status updates.
 Adds to pending list until session-id is discovered from status file."
   (claude-multi--start-directory-watcher)
+  (claude-multi--start-pending-rescan-timer)
   (push agent claude-multi--pending-agents)
-  ;; Also try to immediately find existing status file by cwd
   (let ((agent-path (or (claude-agent-worktree-path agent)
                         (claude-agent-working-directory agent)
                         default-directory)))
+    (claude-multi--log-status-debug "Registering agent %s with path: %s (normalized: %s)"
+                                    (claude-agent-name agent)
+                                    agent-path
+                                    (claude-multi--normalize-path agent-path))
+    ;; Also try to immediately find existing status file by cwd
     (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
       (let ((status-data (claude-multi--read-status-file file)))
         (when status-data
           (let ((cwd (alist-get 'cwd status-data)))
-            (when (and cwd (string= (file-truename (expand-file-name cwd))
-                                    (file-truename (expand-file-name agent-path))))
+            (claude-multi--log-status-debug "  Checking status file: %s, cwd: %s (normalized: %s)"
+                                            (file-name-nondirectory file)
+                                            cwd
+                                            (claude-multi--normalize-path cwd))
+            ;; Use claude-multi--normalize-path for consistent normalization
+            (when (and cwd agent-path
+                       (string= (claude-multi--normalize-path cwd)
+                                (claude-multi--normalize-path agent-path)))
               (let ((session-id (alist-get 'session_id status-data)))
+                (claude-multi--log-status-debug "  MATCHED! Session ID: %s" session-id)
                 (setf (claude-agent-session-id agent) session-id)
                 (puthash session-id agent claude-multi--session-to-agent)
                 (setq claude-multi--pending-agents
                       (delq agent claude-multi--pending-agents))
-                (claude-multi--update-agent-from-status agent status-data)))))))))
+                (claude-multi--update-agent-from-status agent status-data)))))))
+    (when (memq agent claude-multi--pending-agents)
+      (claude-multi--log-status-debug "  Agent %s remains pending (no match found)"
+                                      (claude-agent-name agent)))))
 
 ;;;###autoload
 (defun claude-multi--unregister-agent-for-status (agent)
@@ -266,10 +330,26 @@ Adds to pending list until session-id is discovered from status file."
 (defun claude-multi--insert-status-properties (agent status-data)
   "Insert property drawer for AGENT with STATUS-DATA."
   (let ((context-window (alist-get 'context_window status-data))
-        (git-info (alist-get 'git status-data)))
+        (git-info (alist-get 'git status-data))
+        (model-name (alist-get 'model_name status-data))
+        (claude-mode (alist-get 'claude_mode status-data))
+        (is-busy (alist-get 'is_busy status-data)))
     (insert ":PROPERTIES:\n")
     (insert (format ":ID: %s\n" (claude-agent-id agent)))
-    (insert (format ":STATUS: %s\n" (upcase (symbol-name (claude-agent-status agent)))))
+
+    ;; Status with busy indicator
+    (let ((status-str (upcase (symbol-name (claude-agent-status agent)))))
+      (when is-busy
+        (setq status-str (concat status-str " (BUSY)")))
+      (insert (format ":STATUS: %s\n" status-str)))
+
+    ;; Model information
+    (when model-name
+      (insert (format ":MODEL: %s\n" (upcase model-name))))
+
+    ;; Mode information
+    (when claude-mode
+      (insert (format ":MODE: %s\n" (upcase claude-mode))))
 
     ;; Context window
     (when context-window

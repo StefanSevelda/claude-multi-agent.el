@@ -498,6 +498,7 @@ ACTION-FN is called with point at the beginning of each headline."
           :desc "Kill agent"              "k" #'claude-multi/kill-agent
           :desc "Kill all"                "K" #'claude-multi/kill-all-agents
           :desc "Cleanup status files"    "c" #'claude-multi/cleanup-status-files
+          :desc "Debug status matching"   "?" #'claude-multi/debug-status-matching
           :desc "Export progress"         "e" #'claude-multi/export-progress
           :desc "List worktrees"          "l" #'claude-multi/list-worktrees
           :desc "Save session"            "S" #'claude-multi/save-session
@@ -509,6 +510,54 @@ ACTION-FN is called with point at the beginning of each headline."
            :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
            :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
            :desc "Next diff file"         "n" #'claude-multi/next-diff-file))))
+
+;;;###autoload
+(defun claude-multi/debug-status-matching ()
+  "Show diagnostic information about agent-to-status-file matching."
+  (interactive)
+  (with-current-buffer (get-buffer-create "*Claude Status Diagnostics*")
+    (let ((inhibit-read-only t))
+      (erase-buffer)
+      (insert "=== Claude Multi-Agent Status Matching Diagnostics ===\n\n")
+
+      ;; Show agents
+      (insert (format "Total Agents: %d\n" (length claude-multi--agents)))
+      (insert (format "Pending Agents: %d\n" (length claude-multi--pending-agents)))
+      (insert (format "Watcher Running: %s\n\n"
+                      (if claude-multi--directory-watcher "YES" "NO")))
+
+      ;; Show each agent's state
+      (insert "=== Agents ===\n")
+      (dolist (agent claude-multi--agents)
+        (insert (format "\nAgent: %s\n" (claude-agent-name agent)))
+        (insert (format "  Status: %s\n" (claude-agent-status agent)))
+        (insert (format "  Session ID: %s\n"
+                        (or (claude-agent-session-id agent) "NOT SET")))
+        (insert (format "  Working Dir: %s\n"
+                        (or (claude-agent-working-directory agent) "N/A")))
+        (insert (format "  Worktree: %s\n"
+                        (or (claude-agent-worktree-path agent) "N/A")))
+        (insert (format "  In Pending: %s\n"
+                        (if (memq agent claude-multi--pending-agents) "YES" "NO"))))
+
+      ;; Show status files
+      (insert "\n=== Status Files ===\n")
+      (let ((files (directory-files claude-multi-status-directory t "^status-.*\\.json$")))
+        (if files
+            (dolist (file files)
+              (let ((data (claude-multi--read-status-file file)))
+                (when data
+                  (insert (format "\nFile: %s\n" (file-name-nondirectory file)))
+                  (insert (format "  Session ID: %s\n" (alist-get 'session_id data)))
+                  (insert (format "  CWD: %s\n" (alist-get 'cwd data)))
+                  (insert (format "  Normalized: %s\n"
+                                  (claude-multi--normalize-path
+                                   (alist-get 'cwd data)))))))
+          (insert "\nNo status files found in " claude-multi-status-directory))))
+
+    (goto-char (point-min))
+    (special-mode)
+    (display-buffer (current-buffer))))
 
 (message ">>> CLAUDE-MULTI: Finished loading config.el successfully")
 
