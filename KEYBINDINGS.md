@@ -84,39 +84,46 @@ M-x describe-keymap RET doom-leader-map RET
 
 ## Troubleshooting
 
-If keybindings don't work:
+If keybindings don't work after Emacs restart:
 
 1. **Check if module loaded:**
    ```elisp
    (featurep 'claude-multi)
    ```
 
-2. **Manually reload:**
+2. **Verify keybindings are registered:**
+   ```elisp
+   ;; Should return a keymap, not nil
+   (lookup-key doom-leader-map (kbd "c m"))
+   ```
+
+3. **If keybindings are missing, reload the module:**
    ```elisp
    (load-file "~/.doom.d/modules/tools/claude-multi/config.el")
    ```
 
-3. **Check keybinding setup:**
-   ```elisp
-   (fboundp 'claude-multi--setup-keybindings)
-   ;; Should return t
+4. **Run Doom sync if nothing works:**
+   ```bash
+   doom sync
    ```
-
-4. **Force keybinding registration:**
-   ```elisp
-   (claude-multi--setup-keybindings)
-   ```
+   Then restart Emacs
 
 ## Customization
 
-To change keybindings, edit `config.el` and modify the `map!` call in `claude-multi--setup-keybindings`.
+To change keybindings, edit `config.el` and modify the `map!` call inside the `(after! evil ...)` block.
 
 Example - change prefix from `c m` to `C a`:
 ```elisp
-(map! :leader
-      :prefix ("C a" . "claude-multi")  ; Changed from "c m"
-      :desc "Start session" "s" #'claude-multi/start-session
-      ...)
+(after! evil
+  (map! :leader
+        :prefix ("C a" . "claude-multi")  ; Changed from "c m"
+        :desc "Start session" "s" #'claude-multi/start-session
+        ...))
 ```
 
-Then reload: `M-x eval-buffer` or restart Emacs.
+Then run:
+```bash
+doom sync
+```
+
+And restart Emacs.
