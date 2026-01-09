@@ -527,7 +527,8 @@ ACTION-FN is called with point at the beginning of each headline."
 ;; Keybindings
 ;; Set up keybindings after Doom's keybinds are loaded
 ;; Using eval to hide from byte-compiler
-(with-eval-after-load 'doom-keybinds
+(defun claude-multi--setup-keybindings ()
+  "Set up keybindings for claude-multi."
   (eval
    '(map! :leader
           :prefix ("c m" . "claude-multi")
@@ -552,6 +553,13 @@ ACTION-FN is called with point at the beginning of each headline."
            :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
            :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
            :desc "Next diff file"         "n" #'claude-multi/next-diff-file))))
+
+;; Set up keybindings immediately if doom-keybinds is already loaded,
+;; otherwise wait for it to load
+(if (featurep 'doom-keybinds)
+    (claude-multi--setup-keybindings)
+  (with-eval-after-load 'doom-keybinds
+    (claude-multi--setup-keybindings)))
 
 ;;;###autoload
 (defun claude-multi/debug-status-matching ()
