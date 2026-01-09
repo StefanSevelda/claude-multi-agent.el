@@ -151,24 +151,30 @@ Since the variables are already defined when your module loads, you can set them
 
 ### 6. Keybinding Configuration
 
-**CRITICAL: Use `use-package!` with `:config` block for keybindings.**
+**CRITICAL: Use `doom-after-modules-config-hook` for custom module keybindings.**
 
-After studying official Doom modules (vertico, magit), the correct pattern is:
+For custom modules loaded via symlink, use Doom's module hook:
 
 ```elisp
 ;; In config.el
-(use-package! evil
-  :config
-  (map! :leader
-        :prefix ("c m" . "claude-multi")
-        :desc "Start session" "s" #'claude-multi/start-session
-        :desc "Spawn agent"   "a" #'claude-multi/spawn-agent))
+(add-hook 'doom-after-modules-config-hook
+  (defun claude-multi--setup-keybindings ()
+    "Set up keybindings after all Doom modules are configured."
+    (map! :leader
+          :prefix ("c m" . "claude-multi")
+          :desc "Start session" "s" #'claude-multi/start-session
+          :desc "Spawn agent"   "a" #'claude-multi/spawn-agent)))
 ```
 
 **Why this works:**
-- The `:config` block runs AFTER evil is fully loaded
-- This ensures the leader key is set up before our keybindings
-- This is exactly how official Doom modules define keybindings
+- The hook runs AFTER all Doom modules are fully configured
+- This ensures evil and the leader key are completely set up
+- This is the proper way for custom modules to register keybindings
+
+**Why `use-package! evil :config` doesn't work:**
+- Evil is already loaded before our module's config.el runs
+- The `:config` block only executes when the package is first configured
+- Since evil is already configured, our :config block never runs
 
 **Common mistakes (DON'T do these):**
 
@@ -193,20 +199,20 @@ After studying official Doom modules (vertico, magit), the correct pattern is:
   (with-eval-after-load ...))
 ```
 
-**✅ CORRECT - Simple `use-package!` `:config`:**
+**✅ CORRECT - Use `doom-after-modules-config-hook`:**
 ```elisp
-(use-package! evil
-  :config
-  (map! :leader
-        :prefix ("c m" . "my-module")
-        :desc "Command" "c" #'my-command))
+(add-hook 'doom-after-modules-config-hook
+  (defun my-module--setup-keybindings ()
+    (map! :leader
+          :prefix ("c m" . "my-module")
+          :desc "Command" "c" #'my-command)))
 ```
 
-**Key insights from Doom source code:**
-1. Doom modules use `use-package!` for configuration
-2. Keybindings go in `:config` blocks (runs after package loads)
-3. No special files needed - just put it in `config.el`
-4. The `use-package!` macro handles load order automatically
+**Key insights:**
+1. Custom modules (via symlink) load differently than built-in Doom modules
+2. Built-in modules can use `use-package!` :config because they control package loading
+3. Custom modules must use hooks because packages are already loaded
+4. `doom-after-modules-config-hook` is specifically for this use case
 
 **Verification:**
 ```elisp
