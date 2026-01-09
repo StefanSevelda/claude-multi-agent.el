@@ -50,7 +50,10 @@
   "Handle file-notify EVENT for the status directory."
   (let* ((action (nth 1 event))
          (file (nth 2 event)))
-    (when (and file (string-match-p "^status-.*\\.json$" (file-name-nondirectory file)))
+    ;; Match both .json files and .tmp files (temp files get renamed to .json)
+    (when (and file
+               (or (string-match-p "^status-.*\\.json$" (file-name-nondirectory file))
+                   (string-match-p "^status-.*\\.tmp$" (file-name-nondirectory file))))
       (pcase action
         ((or 'created 'changed 'renamed 'deleted)
          ;; For all events, just refresh the progress buffer from all status files
