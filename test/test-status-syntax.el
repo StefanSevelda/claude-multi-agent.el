@@ -36,15 +36,12 @@
     (let ((required-functions
            '(claude-multi--start-directory-watcher
              claude-multi--stop-directory-watcher
-             claude-multi--register-agent-for-status
-             claude-multi--unregister-agent-for-status
-             claude-multi--rescan-pending-agents
-             claude-multi--process-status-file
-             claude-multi--normalize-path
-             claude-multi--find-agent-by-cwd
+             claude-multi--handle-directory-event
+             claude-multi--read-status-file
+             claude-multi--status-file-path
+             claude-multi--get-all-status-files
              claude-multi/cleanup-status-files
-             claude-multi/reset-agent-mappings
-             claude-multi--get-cached-status)))
+             claude-multi--cleanup-status-tracking)))
       (dolist (func required-functions)
         (expect (fboundp func) :to-be-truthy
                 :failure-message
@@ -66,43 +63,43 @@
         (when (file-directory-p temp-dir)
           (delete-directory temp-dir))))))
 
-(describe "claude-multi--rescan-pending-agents"
+(describe "claude-multi--get-all-status-files"
 
   (before-each
-    ;; Load module and reset state
+    ;; Load module
     (load test-status-module-path nil 'nomessage)
-    (setq claude-multi--pending-agents nil)
-    (when (boundp 'claude-multi--session-to-agent)
-      (clrhash claude-multi--session-to-agent))
-    (when (boundp 'claude-multi--status-cache)
-      (clrhash claude-multi--status-cache)))
+    ;; Ensure clean temp directory
+    (when (boundp 'claude-multi-status-directory)
+      (setq claude-multi-status-directory (make-temp-file "claude-status-test-" t))))
+
+  (after-each
+    ;; Cleanup test directory
+    (when (and (boundp 'claude-multi-status-directory)
+               (file-directory-p claude-multi-status-directory))
+      (delete-directory claude-multi-status-directory t)))
 
   (it "is defined and callable"
-    (expect (fboundp 'claude-multi--rescan-pending-agents) :to-be-truthy)
-    (expect (claude-multi--rescan-pending-agents) :not :to-throw))
+    (expect (fboundp 'claude-multi--get-all-status-files) :to-be-truthy)
+    (expect (claude-multi--get-all-status-files) :not :to-throw))
 
-  (it "handles empty pending agents list"
-    (setq claude-multi--pending-agents nil)
-    (expect (claude-multi--rescan-pending-agents) :not :to-throw))
+  (it "returns empty list for empty directory"
+    (expect (claude-multi--get-all-status-files) :to-equal nil))
 
-  (it "has correct parenthesis balance"
-    ;; Extract function source and verify paren count
-    (let* ((func-symbol 'claude-multi--rescan-pending-agents)
-           (func-def (symbol-function func-symbol)))
-      (expect func-def :to-be-truthy)
-      ;; If we can call it without error, parentheses are balanced
-      (expect (functionp func-symbol) :to-be-truthy)))
-
-  (it "iterates through pending agents without error"
-    ;; Create a mock agent structure
-    (let* ((mock-agent (make-vector 22 nil)))
-      ;; Set required fields (matching cl-defstruct indices)
-      (aset mock-agent 0 'cl-struct-claude-agent)  ; type tag
-      (aset mock-agent 1 "test-agent-1")           ; name
-      (aset mock-agent 2 "agent-1")                ; id
-      (aset mock-agent 18 nil)                     ; session-id
-      (setq claude-multi--pending-agents (list mock-agent))
-      (expect (claude-multi--rescan-pending-agents) :not :to-throw))))
+  (it "reads and sorts status files by timestamp"
+    ;; Create mock status files with different timestamps
+    (let ((file1 (expand-file-name "status-test1.json" claude-multi-status-directory))
+          (file2 (expand-file-name "status-test2.json" claude-multi-status-directory)))
+      (with-temp-file file1
+        (insert "{\"session_id\": \"test1\", \"timestamp\": \"2026-01-09T10:00:00\"}"))
+      (with-temp-file file2
+        (insert "{\"session_id\": \"test2\", \"timestamp\": \"2026-01-09T11:00:00\"}"))
+      ;; Get sorted files
+      (let ((result (claude-multi--get-all-status-files)))
+        ;; Should return 2 entries
+        (expect (length result) :to-equal 2)
+        ;; First entry should be newer (test2)
+        (let ((first-session-id (alist-get 'session_id (cdr (car result)))))
+          (expect first-session-id :to-equal "test2"))))))
 
 (describe "claude-multi/cleanup-status-files"
 
@@ -149,74 +146,23 @@
       (expect (file-exists-p file1) :not :to-be-truthy)
       (expect (file-exists-p file2) :not :to-be-truthy))))
 
-(describe "claude-multi/reset-agent-mappings"
+(describe "claude-multi--handle-directory-event"
 
   (before-each
-    (load test-status-module-path nil 'nomessage)
-    ;; Load required dependencies
-    (add-to-list 'load-path (expand-file-name "../autoload"
-                                              (file-name-directory load-file-name)))
-    (require 'claude-multi-agents)
-    ;; Reset state
-    (setq claude-multi--agents nil)
-    (setq claude-multi--pending-agents nil)
-    (when (boundp 'claude-multi--session-to-agent)
-      (clrhash claude-multi--session-to-agent)))
+    (load test-status-module-path nil 'nomessage))
 
   (it "is defined and callable"
-    (expect (fboundp 'claude-multi/reset-agent-mappings) :to-be-truthy))
+    (expect (fboundp 'claude-multi--handle-directory-event) :to-be-truthy))
 
-  (it "executes without error when no agents exist"
-    (setq claude-multi--agents nil)
-    (expect (claude-multi/reset-agent-mappings) :not :to-throw))
+  (it "handles events without crashing"
+    ;; Mock event with json file
+    (let ((event '(nil created "/tmp/claude-status/status-test.json")))
+      (expect (claude-multi--handle-directory-event event) :not :to-throw)))
 
-  (it "has correct parenthesis balance"
-    (let* ((func-symbol 'claude-multi/reset-agent-mappings)
-           (func-def (symbol-function func-symbol)))
-      (expect func-def :to-be-truthy)
-      (expect (functionp func-symbol) :to-be-truthy)))
-
-  (it "clears session-to-agent mapping"
-    ;; Create mock mapping
-    (puthash "session-1" "agent-1" claude-multi--session-to-agent)
-    (expect (hash-table-count claude-multi--session-to-agent) :to-equal 1)
-    ;; Run reset
-    (claude-multi/reset-agent-mappings)
-    ;; Verify mapping is cleared
-    (expect (hash-table-count claude-multi--session-to-agent) :to-equal 0))
-
-  (it "clears session IDs from all agents"
-    ;; Create mock agents with session IDs
-    (let* ((agent1 (make-vector 22 nil))
-           (agent2 (make-vector 22 nil)))
-      ;; Set type tags and session IDs
-      (aset agent1 0 'cl-struct-claude-agent)
-      (aset agent1 1 "agent-1")
-      (aset agent1 18 "session-1")  ; session-id at index 18
-      (aset agent2 0 'cl-struct-claude-agent)
-      (aset agent2 1 "agent-2")
-      (aset agent2 18 "session-2")
-      (setq claude-multi--agents (list agent1 agent2))
-      ;; Run reset
-      (claude-multi/reset-agent-mappings)
-      ;; Verify session IDs are nil
-      (expect (aref agent1 18) :to-be nil)
-      (expect (aref agent2 18) :to-be nil)))
-
-  (it "adds agents to pending list"
-    ;; Create mock agents
-    (let* ((agent1 (make-vector 22 nil))
-           (agent2 (make-vector 22 nil)))
-      (aset agent1 0 'cl-struct-claude-agent)
-      (aset agent2 0 'cl-struct-claude-agent)
-      (setq claude-multi--agents (list agent1 agent2))
-      (setq claude-multi--pending-agents nil)
-      ;; Run reset
-      (claude-multi/reset-agent-mappings)
-      ;; Verify agents are in pending list
-      (expect (length claude-multi--pending-agents) :to-equal 2)
-      (expect (memq agent1 claude-multi--pending-agents) :to-be-truthy)
-      (expect (memq agent2 claude-multi--pending-agents) :to-be-truthy))))
+  (it "handles events for tmp files"
+    ;; Mock event with tmp file (atomic write pattern)
+    (let ((event '(nil renamed "/tmp/claude-status/status-test.tmp")))
+      (expect (claude-multi--handle-directory-event event) :not :to-throw))))
 
 (describe "Parenthesis Balance Validation"
 
@@ -251,23 +197,20 @@
   (before-each
     (load test-status-module-path nil 'nomessage))
 
-  (it "validates claude-multi--rescan-pending-agents takes no arguments"
-    (let ((arglist (help-function-arglist 'claude-multi--rescan-pending-agents)))
-      (expect arglist :to-equal nil)))
-
   (it "validates claude-multi/cleanup-status-files is interactive"
     (expect (commandp 'claude-multi/cleanup-status-files) :to-be-truthy))
 
-  (it "validates claude-multi/reset-agent-mappings is interactive"
-    (expect (commandp 'claude-multi/reset-agent-mappings) :to-be-truthy))
-
-  (it "validates claude-multi--normalize-path takes one argument"
-    (let ((arglist (help-function-arglist 'claude-multi--normalize-path)))
+  (it "validates claude-multi--read-status-file takes one argument"
+    (let ((arglist (help-function-arglist 'claude-multi--read-status-file)))
       (expect (length arglist) :to-equal 1)))
 
-  (it "validates claude-multi--find-agent-by-cwd takes one argument"
-    (let ((arglist (help-function-arglist 'claude-multi--find-agent-by-cwd)))
-      (expect (length arglist) :to-equal 1))))
+  (it "validates claude-multi--status-file-path takes one argument"
+    (let ((arglist (help-function-arglist 'claude-multi--status-file-path)))
+      (expect (length arglist) :to-equal 1)))
+
+  (it "validates claude-multi--get-all-status-files takes no arguments"
+    (let ((arglist (help-function-arglist 'claude-multi--get-all-status-files)))
+      (expect arglist :to-equal nil))))
 
 (provide 'test-status-syntax)
 ;;; test-status-syntax.el ends here
