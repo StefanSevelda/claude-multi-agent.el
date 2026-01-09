@@ -225,14 +225,14 @@ Used for round-robin split placement or intelligent tab management.")
 
   ;; Use load instead of require for more reliable loading
   (message ">>> CLAUDE-MULTI: Loading status module...")
-  (load (expand-file-name "claude-multi-status.el" autoload-dir) nil 'nomessage)
-  (unless (fboundp 'claude-multi--start-directory-watcher)
-    (error "Failed to load status module - critical functions missing"))
+  (condition-case err
+      (load (expand-file-name "claude-multi-status.el" autoload-dir) nil 'nomessage)
+    (error (message ">>> CLAUDE-MULTI: Error loading status module: %S" err)))
 
   (message ">>> CLAUDE-MULTI: Loading agents module...")
-  (load (expand-file-name "claude-multi-agents.el" autoload-dir) nil 'nomessage)
-  (unless (fboundp 'claude-multi--create-agent)
-    (error "Failed to load agents module - critical functions missing"))
+  (condition-case err
+      (load (expand-file-name "claude-multi-agents.el" autoload-dir) nil 'nomessage)
+    (error (message ">>> CLAUDE-MULTI: Error loading agents module: %S" err)))
 
   (message ">>> CLAUDE-MULTI: Loading progress module...")
   (load (expand-file-name "claude-multi-progress.el" autoload-dir) nil 'nomessage)
@@ -259,7 +259,14 @@ Used for round-robin split placement or intelligent tab management.")
   (message ">>> CLAUDE-MULTI: Loading session module...")
   (load (expand-file-name "claude-multi-session.el" autoload-dir) nil t)
 
-  (message ">>> CLAUDE-MULTI: All modules loaded successfully"))
+  (message ">>> CLAUDE-MULTI: All modules loaded successfully")
+
+  ;; Verify critical functions are available
+  (unless (and (fboundp 'claude-multi--start-directory-watcher)
+               (fboundp 'claude-multi--create-agent))
+    (warn "CLAUDE-MULTI: Some functions missing after load. Module: status=%s agents=%s"
+          (fboundp 'claude-multi--start-directory-watcher)
+          (fboundp 'claude-multi--create-agent))))
 
 ;; Interactive commands
 
