@@ -161,24 +161,61 @@ Minimal external dependencies:
 
 ## Development Workflow
 
+### Emacsclient Integration for Testing
+
+**IMPORTANT**: Claude can now execute elisp directly in your Emacs via emacsclient!
+
+**Setup**: Emacsclient server is enabled in `~/.doom.d/config.el` and starts automatically.
+
+**Usage**: When testing features or debugging, Claude should use:
+
+```bash
+./emacs-eval.sh '(elisp-expression-here)'
+```
+
+**Examples:**
+```bash
+# Check if functions are loaded
+./emacs-eval.sh '(fboundp '\''claude-multi--start-directory-watcher)'
+
+# Get agent status
+./emacs-eval.sh '(dolist (agent claude-multi--agents) (message "%s: %s" (claude-agent-name agent) (claude-agent-status agent)))'
+
+# Run diagnostics
+./emacs-eval.sh '(message "Watcher: %s | Pending: %d" claude-multi--directory-watcher (length claude-multi--pending-agents))'
+```
+
+**Benefits:**
+- No more copy-paste of elisp commands
+- Faster debugging and testing cycles
+- Automatic verification of changes
+- Real-time state inspection
+
+**See**: `EMACS-EVAL-SETUP.md` for detailed setup and usage.
+
+### Standard Development Process
+
 1. **Adding new features**:
    - Create functions in appropriate `autoload` file
    - Add interactive commands to `config.el` if user-facing
    - Update keybindings in `config.el`
    - Add tests for new functionality
    - Keep file size under 800 lines
+   - **Test via emacsclient**: Use `./emacs-eval.sh` to verify functions work
 
 2. **Refactoring**:
    - Extract related functions into new files when approaching line limits
    - Maintain clear separation of concerns
    - Update provides/requires as needed
    - Run full test suite
+   - **Verify loading**: Use emacsclient to check functions are available after reload
 
 3. **Bug fixes**:
    - Write failing test first
    - Implement fix
    - Verify all tests pass
    - Check for edge cases
+   - **Test in live session**: Use emacsclient to verify fix without restart
 
 ## Future Considerations
 

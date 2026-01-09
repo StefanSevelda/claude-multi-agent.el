@@ -6,6 +6,30 @@ description: Diagnose and fix Claude Multi-Agent plugin runtime issues
 
 Use this skill when the user reports issues with the Claude Multi-Agent plugin not working correctly in their Emacs setup.
 
+## Emacsclient Integration
+
+**IMPORTANT**: This project has emacsclient integration enabled. Use `./emacs-eval.sh` to execute elisp directly instead of asking the user to copy-paste commands.
+
+**Example:**
+```bash
+# Instead of telling user: "Run M-: (fboundp 'claude-multi--start-directory-watcher) RET"
+# Just execute:
+./emacs-eval.sh '(fboundp '\''claude-multi--start-directory-watcher)'
+```
+
+**Benefits:**
+- Faster diagnostics (no user copy-paste)
+- Immediate results
+- Can run multiple checks automatically
+- Can apply fixes directly
+
+**Always use emacs-eval for:**
+- Checking function availability
+- Inspecting variable state
+- Running diagnostic commands
+- Applying fixes
+- Testing after changes
+
 ## Common Symptoms
 
 1. **"Commands not available"** - Module not loaded
@@ -17,13 +41,8 @@ Use this skill when the user reports issues with the Claude Multi-Agent plugin n
 
 ### Step 1: Check Module Loading
 
-```elisp
-(message "Loaded: config=%s status=%s agents=%s | Functions: watcher=%s create=%s"
-  (featurep 'claude-multi-config)
-  (featurep 'claude-multi-status)
-  (featurep 'claude-multi-agents)
-  (fboundp 'claude-multi--start-directory-watcher)
-  (fboundp 'claude-multi--create-agent))
+```bash
+./emacs-eval.sh '(message "Loaded: config=%s status=%s agents=%s | Functions: watcher=%s create=%s" (featurep '\''claude-multi-config) (featurep '\''claude-multi-status) (featurep '\''claude-multi-agents) (fboundp '\''claude-multi--start-directory-watcher) (fboundp '\''claude-multi--create-agent))'
 ```
 
 **Expected:** All return `t`
@@ -37,11 +56,8 @@ Use this skill when the user reports issues with the Claude Multi-Agent plugin n
 
 ### Step 2: Check Status Tracking System
 
-```elisp
-(message "Watcher: %s | Pending: %d | Mapped sessions: %d"
-  claude-multi--directory-watcher
-  (length claude-multi--pending-agents)
-  (hash-table-count claude-multi--session-to-agent))
+```bash
+./emacs-eval.sh '(message "Watcher: %s | Pending: %d | Mapped sessions: %d" claude-multi--directory-watcher (length claude-multi--pending-agents) (hash-table-count claude-multi--session-to-agent))'
 ```
 
 **Expected:**
@@ -51,22 +67,14 @@ Use this skill when the user reports issues with the Claude Multi-Agent plugin n
 
 **If watcher is nil:** Status tracking not started. Fix:
 
-```elisp
-(claude-multi--start-directory-watcher)
-(claude-multi--start-pending-rescan-timer)
+```bash
+./emacs-eval.sh '(progn (claude-multi--start-directory-watcher) (claude-multi--start-pending-rescan-timer))'
 ```
 
 ### Step 3: Check Agent Status
 
-```elisp
-(dolist (agent claude-multi--agents)
-  (message "%s: session=%s status=%s kitty=%s"
-    (claude-agent-name agent)
-    (or (and (claude-agent-session-id agent)
-             (substring (claude-agent-session-id agent) 0 8))
-        "NONE")
-    (claude-agent-status agent)
-    (claude-agent-kitty-window-id agent)))
+```bash
+./emacs-eval.sh '(dolist (agent claude-multi--agents) (message "%s: session=%s status=%s kitty=%s" (claude-agent-name agent) (or (and (claude-agent-session-id agent) (substring (claude-agent-session-id agent) 0 8)) "NONE") (claude-agent-status agent) (claude-agent-kitty-window-id agent)))'
 ```
 
 **If "Session ID: NONE":** Agent not matched to Claude session.
