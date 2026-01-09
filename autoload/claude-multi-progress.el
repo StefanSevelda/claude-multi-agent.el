@@ -665,7 +665,11 @@ The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
                 (goto-char insert-pos)
                 (if content
                     (insert content "\n")
-                  (insert "/Waiting for status update.../\n"))
+                  (let ((pending-p (and (fboundp 'claude-multi--agent-is-pending-p)
+                                        (claude-multi--agent-is-pending-p agent))))
+                    (if pending-p
+                        (insert "/Waiting for status file (agent in pending state).../\n")
+                      (insert "/Waiting for first status update.../\n")))))
 
                 ;; Find the headline position for this agent
                 (goto-char (point-min))

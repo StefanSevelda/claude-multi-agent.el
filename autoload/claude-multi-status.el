@@ -125,7 +125,7 @@
     (setq claude-multi--directory-watcher
           (file-notify-add-watch
            claude-multi-status-directory
-           '(change)
+           '(change created renamed)
            #'claude-multi--handle-directory-event))))
 
 ;;;###autoload

@@ -62,14 +62,21 @@ SPC h r r  (doom/reload)
 
 ---
 
-## Issue 2: Agent Status Not Syncing from /tmp/claude-status/
+## Issue 2: Agent Status Not Syncing from /tmp/claude-status/ ✅ RESOLVED
 
-### Symptom
-Agent status information is not being picked up from status files and synced into the session org mode buffer:
-- Progress buffer shows "Waiting for status update..."
-- Status files exist in `/tmp/claude-status/` with valid data
-- Agent matches to session ID (diagnostic shows this)
-- But STATUS drawer in progress buffer never updates with actual status
+### Status: RESOLVED (2026-01-09)
+
+**Solution implemented:**
+- Fixed file-notify watcher to listen for `'(change created renamed)` events instead of only `'(change)`
+- Python hooks use atomic rename which triggers `'renamed'` events
+- Improved status display feedback to distinguish between pending and first-update states
+
+### Original Symptom (NOW FIXED)
+Agent status information was not being picked up from status files and synced into the session org mode buffer:
+- Progress buffer showed "Waiting for status update..."
+- Status files existed in `/tmp/claude-status/` with valid data
+- Agent matched to session ID (diagnostic showed this)
+- But STATUS drawer in progress buffer never updated with actual status
 
 ### Architecture Note: File-Based Status Tracking ONLY
 
@@ -613,19 +620,20 @@ SPC c m ?     - Run diagnostics
 
 ## Priority & Next Steps
 
+### ✅ Completed
+- **Issue 2** - Status not syncing - RESOLVED (file-notify event fix)
+
 ### High Priority (Blocking Development)
 1. **Issue 1** - Plugin not loading - MUST FIX FIRST
 2. **Issue 4** - Create reload system - Makes fixing other issues easier
 
-### Medium Priority (Impairs Functionality)
-3. **Issue 2** - Status not syncing - Core feature broken
-4. **Issue 3** - Add logging - Needed to debug other issues
+### Medium Priority (Nice to Have)
+3. **Issue 3** - Add logging - Helpful for debugging (debug logging already added)
 
 ### Recommended Order
 1. Fix Issue 1 (module loading)
-2. Implement Issue 3 (logging) - will help with everything else
-3. Implement Issue 4 (reload system) - makes development easier
-4. Fix Issue 2 (status sync) - can now debug with logging
+2. Implement Issue 4 (reload system) - makes development easier
+3. Implement Issue 3 (comprehensive logging system) - optional enhancement
 
 ---
 
@@ -642,16 +650,17 @@ After fixing each issue:
 ;; If both are t, issue is fixed
 ```
 
-### Issue 2 - Status Sync
+### Issue 2 - Status Sync ✅ RESOLVED
 ```elisp
 ;; Launch agent
 (claude-multi/spawn-agent)
 ;; Wait 5 seconds
-;; Check progress buffer - should show status, not "Waiting..."
+;; Check progress buffer - should show status with model/mode info
+;; Status should update automatically via file-notify
 ;; Check diagnostic:
 (claude-multi/debug-status-matching)
-;; If "Session ID: NOT SET" -> still broken
-;; If shows session ID but drawer says "Waiting..." -> display issue
+;; Should show: Session ID set, status data populated
+;; If still broken: (setq claude-multi-status-debug t) and check debug buffer
 ```
 
 ### Issue 3 - Logging
