@@ -1,4 +1,4 @@
-;; -*- lexical-binding: t; -*-
+;; -*- lexical-binding: t; no-byte-compile: t; -*-
 ;;; autoload/claude-multi-status.el --- File-based status tracking for Claude Multi-Agent
 
 ;;; Commentary:

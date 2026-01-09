@@ -1,4 +1,4 @@
-;; -*- lexical-binding: t; -*-
+;; -*- lexical-binding: t; no-byte-compile: t; -*-
 ;;; autoload/progress.el --- Org-mode progress tracking for Claude Multi-Agent
 
 ;;; Commentary:
