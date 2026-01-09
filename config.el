@@ -525,33 +525,32 @@ ACTION-FN is called with point at the beginning of each headline."
   (visual-line-mode 1))
 
 ;; Keybindings
-;; Use Doom's after-modules-config hook to ensure all modules are loaded
-(add-hook 'doom-after-modules-config-hook
-  (defun claude-multi--setup-keybindings ()
-    "Set up keybindings after all Doom modules are configured."
-    (map! :leader
-          :prefix ("c m" . "claude-multi")
-          :desc "Start session"           "s" #'claude-multi/start-session
-          :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
-          :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
-          :desc "Open progress"           "p" #'claude-multi/open-progress
-          :desc "Dashboard"               "d" #'claude-multi/dashboard
-          :desc "Focus agent"             "f" #'claude-multi/focus-agent
-          :desc "Kill agent"              "k" #'claude-multi/kill-agent
-          :desc "Kill all"                "K" #'claude-multi/kill-all-agents
-          :desc "Cleanup status files"    "c" #'claude-multi/cleanup-status-files
-          :desc "Debug status matching"   "?" #'claude-multi/debug-status-matching
-          :desc "Export progress"         "e" #'claude-multi/export-progress
-          :desc "List worktrees"          "l" #'claude-multi/list-worktrees
-          :desc "Save session"            "S" #'claude-multi/save-session
-          :desc "Restore session"         "R" #'claude-multi/restore-session
-          :desc "List sessions"           "L" #'claude-multi/list-sessions
-          :desc "Delete session"          "D" #'claude-multi/delete-session
-          (:prefix ("r" . "review")
-           :desc "Review agent changes"   "r" #'claude-multi/review-agent-changes
-           :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
-           :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
-           :desc "Next diff file"         "n" #'claude-multi/next-diff-file))))
+;; Following https://rameezkhan.me/posts/2020/2020-07-03--adding-keybindings-to-doom-emacs/
+;; Just use map! directly - Doom handles the timing
+(map! :leader
+      (:prefix-map ("c" . "code")
+       (:prefix ("m" . "claude-multi")
+        :desc "Start session"           "s" #'claude-multi/start-session
+        :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
+        :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
+        :desc "Open progress"           "p" #'claude-multi/open-progress
+        :desc "Dashboard"               "d" #'claude-multi/dashboard
+        :desc "Focus agent"             "f" #'claude-multi/focus-agent
+        :desc "Kill agent"              "k" #'claude-multi/kill-agent
+        :desc "Kill all"                "K" #'claude-multi/kill-all-agents
+        :desc "Cleanup status files"    "c" #'claude-multi/cleanup-status-files
+        :desc "Debug status matching"   "?" #'claude-multi/debug-status-matching
+        :desc "Export progress"         "e" #'claude-multi/export-progress
+        :desc "List worktrees"          "l" #'claude-multi/list-worktrees
+        :desc "Save session"            "S" #'claude-multi/save-session
+        :desc "Restore session"         "R" #'claude-multi/restore-session
+        :desc "List sessions"           "L" #'claude-multi/list-sessions
+        :desc "Delete session"          "D" #'claude-multi/delete-session
+        (:prefix ("r" . "review")
+         :desc "Review agent changes"   "r" #'claude-multi/review-agent-changes
+         :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
+         :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
+         :desc "Next diff file"         "n" #'claude-multi/next-diff-file))))
 
 ;;;###autoload
 (defun claude-multi/debug-status-matching ()
