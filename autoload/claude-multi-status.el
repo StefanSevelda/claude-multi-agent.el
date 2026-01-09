@@ -267,11 +267,11 @@ Adds to pending list until session-id is discovered from status file."
                                       (float-time (time-subtract (current-time) timestamp-parsed))))
                        (score (cond
                                ;; Running sessions get highest score
-                               (is-running 1000000)
-                               ;; Recent sessions (< 1 minute old) get medium score
-                               ((and age-seconds (< age-seconds 60)) 10000)
+                               (is-running 10000000)
+                               ;; Recent sessions (< 10 minutes old) get medium score
+                               ((and age-seconds (< age-seconds 600)) 100000)
                                ;; Older sessions get score based on recency
-                               (age-seconds (max 0 (- 10000 age-seconds)))
+                               (age-seconds (max 0 (- 100000 age-seconds)))
                                ;; No timestamp - lowest score
                                (t 0))))
                   (when (or (not best-match) (> score (car best-match)))

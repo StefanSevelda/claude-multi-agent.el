@@ -12,9 +12,9 @@ Each status file is evaluated and assigned a score:
 
 | Session State | Score | Priority |
 |--------------|-------|----------|
-| **Running** (claude_status: "running") | 1,000,000 | Highest |
-| **Recently finished** (<1 minute old) | 10,000 | High |
-| **Older finished** (>1 minute old) | 10,000 - age_seconds | Medium |
+| **Running** (claude_status: "running") | 10,000,000 | Highest |
+| **Recently finished** (<10 minutes old) | 100,000 | High |
+| **Older finished** (>10 minutes old) | 100,000 - age_seconds | Medium |
 | **No timestamp** | 0 | Lowest |
 
 The agent matches to the session with the **highest score**.
@@ -25,9 +25,9 @@ You spawn an agent in your home directory (`~/`), which has these status files:
 
 ```
 /tmp/claude-status/
-├── status-abc123.json  # finished 2 hours ago → score: ~2,800
-├── status-def456.json  # finished 30 seconds ago → score: 10,000
-└── status-ghi789.json  # running now → score: 1,000,000
+├── status-abc123.json  # finished 2 hours ago → score: ~28,000
+├── status-def456.json  # finished 5 minutes ago → score: 100,000
+└── status-ghi789.json  # running now → score: 10,000,000
 ```
 
 **Result:** Agent matches to `status-ghi789.json` (running session) ✓
@@ -156,11 +156,11 @@ The scoring logic is in lines 268-276:
 ```elisp
 (score (cond
          ;; Running sessions get highest score
-         (is-running 1000000)
-         ;; Recent sessions (< 1 minute old) get medium score
-         ((and age-seconds (< age-seconds 60)) 10000)
+         (is-running 10000000)
+         ;; Recent sessions (< 10 minutes old) get medium score
+         ((and age-seconds (< age-seconds 600)) 100000)
          ;; Older sessions get score based on recency
-         (age-seconds (max 0 (- 10000 age-seconds)))
+         (age-seconds (max 0 (- 100000 age-seconds)))
          ;; No timestamp - lowest score
          (t 0)))
 ```
