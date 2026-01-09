@@ -75,6 +75,34 @@
 ;;;###autoload
 (defun claude-multi--refresh-progress-from-status-files ()
   "Refresh progress buffer by reading all status files from /tmp/claude-status/."
+  ;; Ensure helper functions are defined (workaround for loading issues)
+  (unless (fboundp 'claude-multi--get-status-icon-from-string)
+    (eval '(defun claude-multi--get-status-icon-from-string (status-str)
+             (pcase status-str
+               ("running" "🔵")
+               ("waiting-for-user" "🟡")
+               ("finished" "🟢")
+               ("error" "🔴")
+               (_ "⚪")))))
+  (unless (fboundp 'claude-multi--update-session-stats-from-files)
+    (eval '(defun claude-multi--update-session-stats-from-files (status-files)
+             (let ((total (length status-files))
+                   (running 0) (waiting 0) (completed 0) (failed 0))
+               (dolist (entry status-files)
+                 (let* ((data (cdr entry))
+                        (status (alist-get 'claude_status data))
+                        (waiting-input (alist-get 'waiting_for_input data)))
+                   (cond
+                    ((string= status "finished") (cl-incf completed))
+                    ((string= status "error") (cl-incf failed))
+                    (waiting-input (cl-incf waiting))
+                    ((string= status "running") (cl-incf running)))))
+               (save-excursion
+                 (goto-char (point-min))
+                 (when (re-search-forward "^- Stats :: " nil t)
+                   (delete-region (point) (line-end-position))
+                   (insert (format "%d total | %d running | %d waiting | %d completed | %d failed"
+                                  total running waiting completed failed))))))))
   (when (buffer-live-p claude-multi--progress-buffer)
     (let ((status-files (claude-multi--get-all-status-files)))
       (with-current-buffer claude-multi--progress-buffer
