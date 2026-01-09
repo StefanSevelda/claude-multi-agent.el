@@ -15,6 +15,9 @@
 (defvar claude-multi-status-directory "/tmp/claude-status/"
   "Directory where Claude hooks write session-specific status files.")
 
+(defvar claude-multi-mapping-directory "/tmp/claude-multi-mappings/"
+  "Directory for agent-name to kitty-window-id mappings.")
+
 (defvar claude-multi--directory-watcher nil
   "File-notify descriptor for watching the status directory.")
 
@@ -90,6 +93,69 @@
             (let ((started-a (alist-get 'session_started (cdr a)))
                   (started-b (alist-get 'session_started (cdr b))))
               (string< (or started-a "") (or started-b "")))))))
+
+;;; Agent-to-Window Mapping
+
+;;;###autoload
+(defun claude-multi--write-agent-mapping (agent-name window-id)
+  "Write mapping from AGENT-NAME to WINDOW-ID for persistent tracking."
+  (let ((mapping-dir (expand-file-name claude-multi-mapping-directory)))
+    (unless (file-exists-p mapping-dir)
+      (make-directory mapping-dir t))
+    (let ((mapping-file (expand-file-name agent-name mapping-dir)))
+      (with-temp-file mapping-file
+        (insert window-id)))))
+
+;;;###autoload
+(defun claude-multi--read-agent-mapping (agent-name)
+  "Read window ID for AGENT-NAME from mapping file."
+  (let ((mapping-file (expand-file-name agent-name claude-multi-mapping-directory)))
+    (when (file-exists-p mapping-file)
+      (with-temp-buffer
+        (insert-file-contents mapping-file)
+        (string-trim (buffer-string))))))
+
+;;;###autoload
+(defun claude-multi--get-all-agent-mappings ()
+  "Get all agent-name to window-id mappings.
+Returns alist of (agent-name . window-id) pairs."
+  (let ((mapping-dir (expand-file-name claude-multi-mapping-directory)))
+    (when (file-exists-p mapping-dir)
+      (let ((mappings nil))
+        (dolist (file (directory-files mapping-dir nil "^[^.]"))
+          (let ((window-id (claude-multi--read-agent-mapping file)))
+            (when window-id
+              (push (cons file window-id) mappings))))
+        (nreverse mappings)))))
+
+;;;###autoload
+(defun claude-multi--get-sessions-with-windows ()
+  "Get all sessions from status files enriched with window IDs from mappings.
+Returns list of plists with :session-id, :agent-name, :window-id, :directory, :status."
+  (let ((status-files (claude-multi--get-all-status-files))
+        (mappings (claude-multi--get-all-agent-mappings))
+        (sessions nil))
+    (dolist (file-data status-files)
+      (let* ((data (cdr file-data))
+             (agent-name (alist-get 'agent_name data))
+             (session-id (alist-get 'session_id data))
+             (directory (alist-get 'cwd data))
+             (status (alist-get 'claude_status data))
+             (window-id (or (alist-get 'kitty_window_id data)
+                           (when agent-name
+                             (cdr (assoc agent-name mappings))))))
+        (when (or agent-name session-id)
+          (push (list :session-id session-id
+                     :agent-name agent-name
+                     :window-id window-id
+                     :directory directory
+                     :status status
+                     :display-name (or agent-name
+                                      (when directory
+                                        (file-name-nondirectory directory))
+                                      session-id))
+                sessions))))
+    (nreverse sessions)))
 
 ;;; Cleanup
 

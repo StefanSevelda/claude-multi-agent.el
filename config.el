@@ -168,6 +168,7 @@ When enabled, agent status will be shown as org-mode tags
 (declare-function claude-multi--kill-agent "claude-multi-agents")
 (declare-function claude-multi--format-duration "claude-multi-agents")
 (declare-function claude-multi--get-status-icon "claude-multi-progress")
+(declare-function claude-multi--get-sessions-with-windows "claude-multi-status")
 (declare-function claude-agent-kitty-window-id "claude-multi-agents")
 (declare-function claude-agent-name "claude-multi-agents")
 (declare-function claude-agent-status "claude-multi-agents")
@@ -460,20 +461,61 @@ ACTION-FN is called with point at the beginning of each headline."
 
 ;;;###autoload
 (defun claude-multi/focus-agent ()
-  "Switch focus to a specific agent's kitty window."
+  "Switch focus to a specific agent's kitty window.
+Works with both in-memory agents and persistent sessions from status files."
   (interactive)
-  (if (null claude-multi--agents)
-      (message "No active agents")
-    (let ((agent (claude-multi--select-agent claude-multi--agents "Focus on agent: ")))
-      (when agent
-        (let* ((window-id (claude-agent-kitty-window-id agent))
-               (listen-addr (or claude-multi-kitty-listen-address
-                               (getenv "KITTY_LISTEN_ON")
-                               "unix:/tmp/kitty-claude")))
-          (call-process-shell-command
-           (format "kitty @ --to=%s focus-window --match=id:%s"
-                  listen-addr window-id)
-           nil 0))))))
+  ;; Get sessions from both in-memory agents and status files
+  (let* ((sessions (claude-multi--get-sessions-with-windows))
+         (in-memory-agents claude-multi--agents)
+         (all-sessions (append
+                       ;; Add in-memory agents first
+                       (mapcar (lambda (agent)
+                                (list :agent-name (claude-agent-name agent)
+                                     :window-id (claude-agent-kitty-window-id agent)
+                                     :status (symbol-name (claude-agent-status agent))
+                                     :display-name (claude-agent-name agent)
+                                     :source 'in-memory))
+                              in-memory-agents)
+                       ;; Add sessions from status files (avoiding duplicates)
+                       (cl-remove-if
+                        (lambda (session)
+                          (and (plist-get session :agent-name)
+                               (cl-find (plist-get session :agent-name)
+                                       in-memory-agents
+                                       :test #'string=
+                                       :key #'claude-agent-name)))
+                        sessions)))
+         ;; Filter to only sessions with window IDs
+         (focusable-sessions (cl-remove-if-not
+                             (lambda (session)
+                               (plist-get session :window-id))
+                             all-sessions)))
+    (if (null focusable-sessions)
+        (message "No agents with known window IDs found. Try spawning a new agent.")
+      ;; Let user select a session
+      (let* ((choices (mapcar (lambda (session)
+                               (let ((name (plist-get session :display-name))
+                                     (status (or (plist-get session :status) "unknown"))
+                                     (dir (plist-get session :directory)))
+                                 (cons (format "%s [%s]%s"
+                                             name status
+                                             (if dir (format " - %s" dir) ""))
+                                       session)))
+                             focusable-sessions))
+             (choice (completing-read "Focus on agent: " choices nil t))
+             (selected-session (cdr (assoc choice choices))))
+        (when selected-session
+          (let* ((window-id (plist-get selected-session :window-id))
+                 (listen-addr (or claude-multi-kitty-listen-address
+                                 (getenv "KITTY_LISTEN_ON")
+                                 "unix:/tmp/kitty-claude")))
+            (call-process-shell-command
+             (format "kitty @ --to=%s focus-window --match=id:%s"
+                    listen-addr window-id)
+             nil 0)
+            (message "Focused on %s (window %s)"
+                    (plist-get selected-session :display-name)
+                    window-id)))))))
 
 ;;;###autoload
 (defun claude-multi/kill-agent ()

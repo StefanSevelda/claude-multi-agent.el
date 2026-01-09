@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "prompt",
-            "prompt": "Check if the file being edited is autoload/claude-multi-status.el. If it is, run the syntax validation tests using: ./test/run-syntax-tests.sh\n\nIf tests fail, report the errors to the user and suggest fixes."
+            "prompt": "Check if the file being edited is in the autoload/ directory (e.g., autoload/claude-multi-status.el, autoload/claude-multi-agents.el, etc.) OR is config.el. If it is, run the syntax validation tests using: ./test/run-syntax-tests.sh\n\nThis ensures parenthesis balance and module loading are correct after every edit. If tests fail, report the errors to the user and suggest fixes."
           }
         ]
       }

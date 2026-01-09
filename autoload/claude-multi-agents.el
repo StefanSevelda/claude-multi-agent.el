@@ -15,9 +15,7 @@
 (declare-function claude-multi--update-agent-status "claude-multi-progress")
 (declare-function claude-multi--add-agent-section "claude-multi-progress")
 (declare-function claude-multi--update-session-stats "claude-multi-progress")
-;; These functions are no longer needed with simplified status tracking
-;; (declare-function claude-multi--register-agent-for-status "claude-multi-status")
-;; (declare-function claude-multi--unregister-agent-for-status "claude-multi-status")
+(declare-function claude-multi--write-agent-mapping "claude-multi-status")
 (declare-function claude-multi--build-worktree-command "claude-multi-worktree")
 (declare-function claude-multi--in-git-repo-p "claude-multi-worktree")
 (declare-function claude-multi--get-git-root "claude-multi-worktree")
@@ -172,15 +170,15 @@ Returns a plist with :name, :color, :text, :bg properties."
                                  ""
                                (format " --match=id:%s" claude-multi--current-session-window-id)))
                ;; Build environment variables for the agent
-               (env-clause (concat
-                           ;; Always set CLAUDE_AGENT_NAME for status file identification
-                           (format " --env=CLAUDE_AGENT_NAME=%s" (shell-quote-argument (claude-agent-name agent)))
-                           ;; Optionally add WebSocket port if enabled
-                           (if (and claude-multi-websocket-enabled
-                                   (fboundp 'claude-multi-ws--get-port-env)
-                                   (claude-multi-ws--get-port-env))
-                               (format " --env=CLAUDE_WS_PORT=%s" (claude-multi-ws--get-port-env))
-                             "")))
+               (env-clause-base (concat
+                                 ;; Always set CLAUDE_AGENT_NAME for status file identification
+                                 (format " --env=CLAUDE_AGENT_NAME=%s" (shell-quote-argument (claude-agent-name agent)))
+                                 ;; Optionally add WebSocket port if enabled
+                                 (if (and claude-multi-websocket-enabled
+                                         (fboundp 'claude-multi-ws--get-port-env)
+                                         (claude-multi-ws--get-port-env))
+                                     (format " --env=CLAUDE_WS_PORT=%s" (claude-multi-ws--get-port-env))
+                                   "")))
                ;; Launch kitty and get window ID
                (launch-output
                 (shell-command-to-string
@@ -188,7 +186,7 @@ Returns a plist with :name, :color, :text, :bg properties."
                         listen-addr
                         window-type
                         match-clause
-                        env-clause
+                        env-clause-base
                         (shell-quote-argument starting-dir)
                         session-name)))
                (window-id (string-trim launch-output)))
@@ -202,6 +200,10 @@ Returns a plist with :name, :color, :text, :bg properties."
           (setf (claude-agent-context-buffer agent)
                 (generate-new-buffer (format "*claude-context-%s*" agent-id)))
           (setf (claude-agent-status agent) 'running)
+
+          ;; Write persistent mapping from agent name to window ID
+          (when (and window-id (not (string-empty-p window-id)))
+            (claude-multi--write-agent-mapping (claude-agent-name agent) window-id))
 
           ;; Set tab and terminal colors using agent's color scheme
           (let* ((color-scheme (claude-multi--get-agent-color-scheme agent))
