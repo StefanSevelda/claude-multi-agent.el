@@ -256,10 +256,16 @@ Adds to pending list until session-id is discovered from status file."
                                               (claude-multi--normalize-path cwd)
                                               claude-status)
               ;; Only consider files with matching cwd and unclaimed sessions
+              ;; Skip finished sessions unless they're very recent (< 10 seconds old)
               (when (and cwd agent-path session-id
                          (string= (claude-multi--normalize-path cwd)
                                   (claude-multi--normalize-path agent-path))
-                         (not (gethash session-id claude-multi--session-to-agent)))
+                         (not (gethash session-id claude-multi--session-to-agent))
+                         (or (not (string= claude-status "finished"))
+                             (and timestamp
+                                  (< (float-time (time-subtract (current-time)
+                                                               (date-to-time timestamp)))
+                                     10))))
                 ;; Scoring: prefer running > recent finished > old finished
                 (let* ((is-running (string= claude-status "running"))
                        (timestamp-parsed (when timestamp (date-to-time timestamp)))
