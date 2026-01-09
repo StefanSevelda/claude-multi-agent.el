@@ -225,15 +225,21 @@ Used for round-robin split placement or intelligent tab management.")
 
   ;; Use load instead of require for more reliable loading
   (message ">>> CLAUDE-MULTI: Loading status module...")
-  (load (expand-file-name "claude-multi-status.el" autoload-dir) nil t)
+  (load (expand-file-name "claude-multi-status.el" autoload-dir) nil 'nomessage)
+  (unless (fboundp 'claude-multi--start-directory-watcher)
+    (error "Failed to load status module - critical functions missing"))
+
   (message ">>> CLAUDE-MULTI: Loading agents module...")
-  (load (expand-file-name "claude-multi-agents.el" autoload-dir) nil t)
+  (load (expand-file-name "claude-multi-agents.el" autoload-dir) nil 'nomessage)
+  (unless (fboundp 'claude-multi--create-agent)
+    (error "Failed to load agents module - critical functions missing"))
+
   (message ">>> CLAUDE-MULTI: Loading progress module...")
-  (load (expand-file-name "claude-multi-progress.el" autoload-dir) nil t)
+  (load (expand-file-name "claude-multi-progress.el" autoload-dir) nil 'nomessage)
   (message ">>> CLAUDE-MULTI: Loading worktree module...")
-  (load (expand-file-name "claude-multi-worktree.el" autoload-dir) nil t)
+  (load (expand-file-name "claude-multi-worktree.el" autoload-dir) nil 'nomessage)
   (message ">>> CLAUDE-MULTI: Loading notifications module...")
-  (load (expand-file-name "claude-multi-notifications.el" autoload-dir) nil t)
+  (load (expand-file-name "claude-multi-notifications.el" autoload-dir) nil 'nomessage)
 
   ;; WebSocket support (optional - only loads if websocket package available)
   (when (and claude-multi-websocket-enabled
