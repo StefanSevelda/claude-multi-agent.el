@@ -27,7 +27,7 @@ We fixed the parenthesis mismatches by:
 
 ## Prevention Strategy
 
-To prevent this from happening again, we created:
+To prevent this from happening again, we created a **5-layer defense system**:
 
 ### 1. Fast Syntax Validation Script (`test/run-syntax-tests.sh`)
 
@@ -79,6 +79,23 @@ A git hook that:
 cp git-hooks/pre-commit .git/hooks/pre-commit
 chmod +x .git/hooks/pre-commit
 ```
+
+### 5. Claude Hook (`.claude/settings.json`)
+
+A Claude Code hook that:
+- Prompts Claude to run syntax tests after editing status module
+- Provides immediate feedback during development
+- Automatically fixes errors and re-runs tests
+- No manual intervention needed
+
+**Configuration:** Already active in `.claude/settings.json`
+
+The hook triggers after any Edit or Write operation, prompting Claude to:
+1. Detect if `claude-multi-status.el` was edited
+2. Run `./test/run-syntax-tests.sh`
+3. Report results
+4. Fix errors if tests fail
+5. Verify the fix with another test run
 
 ## Test Results
 

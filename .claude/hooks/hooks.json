@@ -1,0 +1,27 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "^(Edit|Write)$",
+        "hooks": [
+          {
+            "type": "prompt",
+            "prompt": "Check if the file being edited is autoload/claude-multi-status.el. If it is, run the syntax validation tests using: ./test/run-syntax-tests.sh\n\nIf tests fail, report the errors to the user and suggest fixes."
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "./test/run-syntax-tests.sh 2>&1 | tail -10",
+            "description": "Final syntax validation check before session ends",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

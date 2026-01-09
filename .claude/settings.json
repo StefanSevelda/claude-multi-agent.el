@@ -13,8 +13,8 @@
         "matcher": "Edit|Write",
         "hooks": [
           {
-            "type": "command",
-            "command": "emacs --batch -l test/run-tests.el 2>&1 | tail -50"
+            "type": "prompt",
+            "prompt": "After editing any file in autoload/claude-multi-status.el, IMMEDIATELY run the syntax validation tests using: ./test/run-syntax-tests.sh\n\nThis is CRITICAL to catch parenthesis mismatches before they cause module loading failures.\n\nIf tests fail:\n1. Show the user the full error output\n2. Identify which function has the syntax error\n3. Fix the error immediately\n4. Re-run the tests to verify the fix"
           }
         ]
       }
