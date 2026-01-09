@@ -72,6 +72,100 @@
                        0 0 0 0 0))
         (insert (format "* Agents\n\n"))))))
 
+;;;###autoload
+(defun claude-multi--refresh-progress-from-status-files ()
+  "Refresh progress buffer by reading all status files from /tmp/claude-status/."
+  (when (buffer-live-p claude-multi--progress-buffer)
+    (let ((status-files (claude-multi--get-all-status-files)))
+      (with-current-buffer claude-multi--progress-buffer
+        (let ((inhibit-read-only t))
+          ;; Clear agents section and rebuild
+          (save-excursion
+            (goto-char (point-min))
+            (when (re-search-forward "^\\* Agents" nil t)
+              (let ((agents-start (line-beginning-position)))
+                ;; Delete from "* Agents" to end of buffer
+                (delete-region agents-start (point-max))
+                (goto-char agents-start)
+                (insert "* Agents\n\n")
+
+                ;; Insert each session from status files
+                (dolist (entry status-files)
+                  (let* ((data (cdr entry))
+                         (session-id (alist-get 'session_id data))
+                         (agent-name (alist-get 'agent_name data))
+                         (kitty-id (alist-get 'kitty_window_id data))
+                         (cwd (alist-get 'cwd data))
+                         (status (alist-get 'claude_status data))
+                         (timestamp (alist-get 'timestamp data))
+                         (model (alist-get 'model_name data))
+                         (mode (alist-get 'claude_mode data))
+                         (context (alist-get 'context_window data))
+                         (git (alist-get 'git data)))
+
+                    ;; Insert session header
+                    (insert (format "** %s %s\n"
+                                   (claude-multi--get-status-icon-from-string status)
+                                   (or agent-name (format "Session %s" (substring session-id 0 8)))))
+
+                    ;; Insert properties drawer
+                    (insert ":PROPERTIES:\n")
+                    (insert (format ":SESSION_ID: %s\n" session-id))
+                    (when kitty-id
+                      (insert (format ":KITTY_WINDOW: %s\n" kitty-id)))
+                    (insert (format ":DIRECTORY: %s\n" cwd))
+                    (insert (format ":STATUS: %s\n" (upcase status)))
+                    (when model
+                      (insert (format ":MODEL: %s\n" (upcase model))))
+                    (when mode
+                      (insert (format ":MODE: %s\n" (upcase mode))))
+                    (when context
+                      (insert (format ":TOKENS: %d/%d (%.1f%%)\n"
+                                     (or (alist-get 'tokens_used context) 0)
+                                     (or (alist-get 'tokens_total context) 200000)
+                                     (or (alist-get 'percentage_used context) 0))))
+                    (when git
+                      (when-let ((branch (alist-get 'branch git)))
+                        (insert (format ":BRANCH: %s\n" branch))))
+                    (insert (format ":UPDATED: %s\n" (or timestamp "unknown")))
+                    (insert ":END:\n\n"))))
+
+              ;; Update stats
+              (claude-multi--update-session-stats-from-files status-files)))))))
+
+(defun claude-multi--get-status-icon-from-string (status-str)
+  "Return icon emoji for STATUS-STR."
+  (pcase status-str
+    ("running" "🔵")
+    ("waiting-for-user" "🟡")
+    ("finished" "🟢")
+    ("error" "🔴")
+    (_ "⚪")))
+
+(defun claude-multi--update-session-stats-from-files (status-files)
+  "Update session statistics line from STATUS-FILES."
+  (let ((total (length status-files))
+        (running 0)
+        (waiting 0)
+        (completed 0)
+        (failed 0))
+    (dolist (entry status-files)
+      (let* ((data (cdr entry))
+             (status (alist-get 'claude_status data))
+             (waiting-input (alist-get 'waiting_for_input data)))
+        (cond
+         ((string= status "finished") (cl-incf completed))
+         ((string= status "error") (cl-incf failed))
+         (waiting-input (cl-incf waiting))
+         ((string= status "running") (cl-incf running)))))
+
+    (save-excursion
+      (goto-char (point-min))
+      (when (re-search-forward "^- Stats :: " nil t)
+        (delete-region (point) (line-end-position))
+        (insert (format "%d total | %d running | %d waiting | %d completed | %d failed"
+                       total running waiting completed failed)))))))
+
 ;;; Agent section management
 
 ;;;###autoload

@@ -357,6 +357,11 @@ def generate_status_json(state, cwd, context_info=None, git_info=None, model_inf
     # Determine busy status: idle if waiting for input, otherwise busy
     is_busy = not waiting_for_input and claude_status not in ["finished", "error"]
 
+    # Extract kitty and agent information from environment
+    kitty_window_id = os.environ.get("KITTY_WINDOW_ID")
+    kitty_tab_id = os.environ.get("KITTY_TAB_ID")
+    agent_name = os.environ.get("CLAUDE_AGENT_NAME")
+
     status_data = {
         "cwd": str(cwd),
         "session_id": state.get("session_id"),
@@ -365,6 +370,9 @@ def generate_status_json(state, cwd, context_info=None, git_info=None, model_inf
         "claude_status": claude_status,
         "waiting_for_input": waiting_for_input,
         "is_busy": is_busy,
+        "kitty_window_id": kitty_window_id,
+        "kitty_tab_id": kitty_tab_id,
+        "agent_name": agent_name,
         "current_activity": {
             "goal": goal,
             "waiting": waiting_for_input

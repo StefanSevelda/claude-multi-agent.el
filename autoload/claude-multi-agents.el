@@ -15,8 +15,9 @@
 (declare-function claude-multi--update-agent-status "claude-multi-progress")
 (declare-function claude-multi--add-agent-section "claude-multi-progress")
 (declare-function claude-multi--update-session-stats "claude-multi-progress")
-(declare-function claude-multi--register-agent-for-status "claude-multi-status")
-(declare-function claude-multi--unregister-agent-for-status "claude-multi-status")
+;; These functions are no longer needed with simplified status tracking
+;; (declare-function claude-multi--register-agent-for-status "claude-multi-status")
+;; (declare-function claude-multi--unregister-agent-for-status "claude-multi-status")
 (declare-function claude-multi--build-worktree-command "claude-multi-worktree")
 (declare-function claude-multi--in-git-repo-p "claude-multi-worktree")
 (declare-function claude-multi--get-git-root "claude-multi-worktree")
@@ -171,11 +172,15 @@ Returns a plist with :name, :color, :text, :bg properties."
                                  ""
                                (format " --match=id:%s" claude-multi--current-session-window-id)))
                ;; Build environment variables for the agent
-               (env-clause (if (and claude-multi-websocket-enabled
+               (env-clause (concat
+                           ;; Always set CLAUDE_AGENT_NAME for status file identification
+                           (format " --env=CLAUDE_AGENT_NAME=%s" (shell-quote-argument (claude-agent-name agent)))
+                           ;; Optionally add WebSocket port if enabled
+                           (if (and claude-multi-websocket-enabled
                                    (fboundp 'claude-multi-ws--get-port-env)
                                    (claude-multi-ws--get-port-env))
-                              (format " --env=CLAUDE_WS_PORT=%s" (claude-multi-ws--get-port-env))
-                            ""))
+                               (format " --env=CLAUDE_WS_PORT=%s" (claude-multi-ws--get-port-env))
+                             ""))))
                ;; Launch kitty and get window ID
                (launch-output
                 (shell-command-to-string
@@ -266,9 +271,9 @@ Returns a plist with :name, :color, :text, :bg properties."
           ;; Update session statistics (agent counts)
           (claude-multi--update-session-stats)
 
-          ;; Register agent for file-based status tracking
-          (when (fboundp 'claude-multi--register-agent-for-status)
-            (claude-multi--register-agent-for-status agent))))
+          ;; No need to register agent - status files are discovered automatically
+          ;; by watching /tmp/claude-status/ directory
+          )
 
     (error
      (setf (claude-agent-status agent) 'failed)
@@ -375,9 +380,7 @@ Uses WebSocket if available, falls back to polling if configured."
     (when-let ((timer (claude-agent-status-timer agent)))
       (cancel-timer timer))
 
-    ;; Unregister from file-based status tracking
-    (when (fboundp 'claude-multi--unregister-agent-for-status)
-      (claude-multi--unregister-agent-for-status agent))
+    ;; No need to unregister - status tracking is fully file-based
 
     ;; Close kitty window
     (let* ((window-id (claude-agent-kitty-window-id agent))
