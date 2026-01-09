@@ -676,13 +676,13 @@ The STATUS drawer is collapsible in org-mode - use TAB to fold/unfold."
                 (when (re-search-forward
                        (format "^\\*\\* .* %s" (regexp-quote (claude-agent-id agent)))
                        nil t)
-                  (setq headline-pos (line-beginning-position))))))))
+                  (setq headline-pos (line-beginning-position))))))
 
         ;; Auto-expand drawer if agent is waiting for input
         (when (and headline-pos content (string-match-p "WAITING FOR INPUT" content))
           (save-excursion
             (goto-char headline-pos)
-            (claude-multi--show-subtree-safe))))))
+            (claude-multi--show-subtree-safe))))))))
 
 ;;;###autoload
 (defun claude-multi--watch-agent-status-file (_agent)
