@@ -1,0 +1,81 @@
+name: Syntax Validation Tests
+
+on:
+  push:
+    branches: [ main ]
+    paths:
+      - 'autoload/claude-multi-status.el'
+      - 'test/run-syntax-tests.sh'
+      - 'test/test-status-syntax.el'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'autoload/claude-multi-status.el'
+      - 'test/run-syntax-tests.sh'
+      - 'test/test-status-syntax.el'
+
+jobs:
+  syntax-tests:
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        emacs-version:
+          - '27.2'
+          - '28.2'
+          - '29.1'
+
+    steps:
+    - uses: actions/checkout@v3
+
+    - name: Install Emacs
+      uses: purcell/setup-emacs@master
+      with:
+        version: ${{ matrix.emacs-version }}
+
+    - name: Run Syntax Validation Tests
+      run: |
+        chmod +x test/run-syntax-tests.sh
+        ./test/run-syntax-tests.sh
+
+    - name: Check for syntax errors in all elisp files
+      run: |
+        echo "Checking all elisp files for syntax errors..."
+        for file in *.el autoload/*.el; do
+          if [ -f "$file" ]; then
+            echo "Checking $file..."
+            emacs -batch --eval "(progn
+              (condition-case err
+                  (progn
+                    (load-file \"$file\")
+                    (message \"✓ $file loads successfully\"))
+                (error
+                  (message \"✗ $file failed to load: %s\" err)
+                  (kill-emacs 1))))" 2>&1 | grep -v "^Loading"
+          fi
+        done
+
+    - name: Verify parenthesis balance in all elisp files
+      run: |
+        echo "Verifying parenthesis balance in all elisp files..."
+        for file in *.el autoload/*.el; do
+          if [ -f "$file" ]; then
+            emacs -batch --eval "(progn
+              (with-temp-buffer
+                (insert-file-contents \"$file\")
+                (goto-char (point-min))
+                (let ((opens 0) (closes 0))
+                  (while (not (eobp))
+                    (let ((char (char-after)))
+                      (cond
+                       ((eq char ?\() (setq opens (1+ opens)))
+                       ((eq char ?\)) (setq closes (1+ closes)))))
+                    (forward-char 1))
+                  (if (= opens closes)
+                      (message \"✓ $file: balanced (%d/%d)\" opens closes)
+                    (progn
+                      (message \"✗ $file: UNBALANCED (%d opens, %d closes)\"
+                               opens closes)
+                      (kill-emacs 1))))))" 2>&1
+          fi
+        done

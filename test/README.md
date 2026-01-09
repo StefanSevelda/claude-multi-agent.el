@@ -4,6 +4,22 @@ This directory contains unit tests for the claude-multi-agent plugin using the B
 
 ## Running Tests
 
+### Syntax Validation Tests (Recommended First)
+
+```bash
+# Run syntax validation tests (fast, catches parenthesis errors)
+./test/run-syntax-tests.sh
+```
+
+These tests verify:
+- Parenthesis balance in all functions
+- Module loads without syntax errors
+- Critical functions are defined
+- Byte compilation succeeds
+- Specific functions execute without errors
+
+**Run these tests before committing any changes to `autoload/claude-multi-status.el`!**
+
 ### From Command Line
 
 ```bash
@@ -33,11 +49,42 @@ make test
 
 ## Test Files
 
+### Syntax Validation
+- `run-syntax-tests.sh` - Shell script for fast syntax validation
+- `test-status-syntax.el` - Buttercup tests for syntax validation
+- `.github/workflows/syntax-tests.yml` - CI workflow for syntax tests
+
+### Integration Tests
 - `test-kitty-integration.el` - Tests for kitty terminal integration
 - `test-progress-visibility.el` - Tests for STATUS drawer visibility features
+- `test-status-tracking.el` - Tests for agent status tracking
+- `test-multi-agent-same-dir.el` - Tests for multiple agents in same directory
 - `run-tests.el` - Test runner script that loads all test files
 
 ## Test Coverage
+
+### Syntax Validation Tests
+
+1. **Parenthesis Balance**
+   - Counts opening and closing parentheses in all elisp files
+   - Verifies balance at end of file
+   - Catches unclosed s-expressions early
+
+2. **Module Loading**
+   - Tests that `claude-multi-status.el` loads without errors
+   - Verifies all critical functions are defined after loading
+   - Tests byte compilation for warnings and errors
+
+3. **Function-Specific Tests**
+   - `claude-multi--rescan-pending-agents`: Tests nested loop structure
+   - `claude-multi/cleanup-status-files`: Tests message formatting
+   - `claude-multi/reset-agent-mappings`: Tests hash table operations
+   - Each function tested for execution without errors
+
+4. **Byte Compilation**
+   - Verifies module can be byte-compiled
+   - Checks for compilation warnings
+   - Ensures compiled code is valid
 
 ### Kitty Integration Tests
 
