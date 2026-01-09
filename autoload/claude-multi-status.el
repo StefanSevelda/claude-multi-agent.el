@@ -239,30 +239,55 @@ Adds to pending list until session-id is discovered from status file."
                                     (claude-multi--normalize-path agent-path))
     ;; Also try to immediately find existing status file by cwd
     ;; Only match to sessions that aren't already claimed
-    (catch 'found
+    ;; Prefer active (running) and recent sessions over finished/old ones
+    (let ((best-match nil)
+          (best-match-file nil)
+          (best-match-data nil))
       (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
         (let ((status-data (claude-multi--read-status-file file)))
           (when status-data
             (let ((cwd (alist-get 'cwd status-data))
-                  (session-id (alist-get 'session_id status-data)))
-              (claude-multi--log-status-debug "  Checking status file: %s, cwd: %s (normalized: %s)"
+                  (session-id (alist-get 'session_id status-data))
+                  (claude-status (alist-get 'claude_status status-data))
+                  (timestamp (alist-get 'timestamp status-data)))
+              (claude-multi--log-status-debug "  Checking status file: %s, cwd: %s (normalized: %s), status: %s"
                                               (file-name-nondirectory file)
                                               cwd
-                                              (claude-multi--normalize-path cwd))
-              ;; Use claude-multi--normalize-path for consistent normalization
-              ;; Only match if session is not already claimed by another agent
+                                              (claude-multi--normalize-path cwd)
+                                              claude-status)
+              ;; Only consider files with matching cwd and unclaimed sessions
               (when (and cwd agent-path session-id
                          (string= (claude-multi--normalize-path cwd)
                                   (claude-multi--normalize-path agent-path))
                          (not (gethash session-id claude-multi--session-to-agent)))
-                (claude-multi--log-status-debug "  MATCHED! Session ID: %s" session-id)
-                (setf (claude-agent-session-id agent) session-id)
-                (puthash session-id agent claude-multi--session-to-agent)
-                (setq claude-multi--pending-agents
-                      (delq agent claude-multi--pending-agents))
-                (claude-multi--update-agent-from-status agent status-data)
-                ;; Stop searching once we find a match
-                (throw 'found t)))))))
+                ;; Scoring: prefer running > recent finished > old finished
+                (let* ((is-running (string= claude-status "running"))
+                       (timestamp-parsed (when timestamp (date-to-time timestamp)))
+                       (age-seconds (when timestamp-parsed
+                                      (float-time (time-subtract (current-time) timestamp-parsed))))
+                       (score (cond
+                               ;; Running sessions get highest score
+                               (is-running 1000000)
+                               ;; Recent sessions (< 1 minute old) get medium score
+                               ((and age-seconds (< age-seconds 60)) 10000)
+                               ;; Older sessions get score based on recency
+                               (age-seconds (max 0 (- 10000 age-seconds)))
+                               ;; No timestamp - lowest score
+                               (t 0))))
+                  (when (or (not best-match) (> score (car best-match)))
+                    (setq best-match (cons score session-id))
+                    (setq best-match-file file)
+                    (setq best-match-data status-data))))))))
+      ;; If we found a match, register it
+      (when best-match
+        (let ((session-id (cdr best-match)))
+          (claude-multi--log-status-debug "  MATCHED! Session ID: %s (score: %d)"
+                                          session-id (car best-match))
+          (setf (claude-agent-session-id agent) session-id)
+          (puthash session-id agent claude-multi--session-to-agent)
+          (setq claude-multi--pending-agents
+                (delq agent claude-multi--pending-agents))
+          (claude-multi--update-agent-from-status agent best-match-data))))
     (when (memq agent claude-multi--pending-agents)
       (claude-multi--log-status-debug "  Agent %s remains pending (no match found)"
                                       (claude-agent-name agent)))))
