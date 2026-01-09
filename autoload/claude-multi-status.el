@@ -75,10 +75,40 @@
   (memq agent claude-multi--pending-agents))
 
 (defun claude-multi--start-pending-rescan-timer ()
-  "Start timer to periodically try matching pending agents."
+  "Start timer to periodically try matching pending agents and check stale agents."
   (unless claude-multi--pending-rescan-timer
     (setq claude-multi--pending-rescan-timer
-          (run-with-timer 10 10 #'claude-multi--rescan-pending-agents))))
+          (run-with-timer 10 10 #'claude-multi--rescan-all-agents))))
+
+(defun claude-multi--rescan-all-agents ()
+  "Rescan pending agents and check for stale matched agents.
+This is the main self-healing function that runs periodically."
+  ;; First, try to match pending agents
+  (claude-multi--rescan-pending-agents)
+
+  ;; Then, check matched agents for staleness and re-match if needed
+  (dolist (agent claude-multi--agents)
+    (when (and (claude-agent-session-id agent)
+               (not (memq agent claude-multi--pending-agents)))
+      (let* ((session-id (claude-agent-session-id agent))
+             (cached-status (gethash session-id claude-multi--status-cache))
+             (claude-status (when cached-status (alist-get 'claude_status cached-status)))
+             (timestamp (when cached-status (alist-get 'timestamp cached-status)))
+             (age-seconds (when timestamp
+                            (float-time (time-subtract (current-time)
+                                                      (date-to-time timestamp))))))
+        ;; Re-match if: session is finished AND no updates for >30 seconds
+        (when (and (string= claude-status "finished")
+                   age-seconds
+                   (> age-seconds 30))
+          (claude-multi--log-status-debug "Agent %s has stale finished session (age: %d sec), attempting re-match"
+                                          (claude-agent-name agent) age-seconds)
+          ;; Clear current session
+          (remhash session-id claude-multi--session-to-agent)
+          (remhash session-id claude-multi--status-cache)
+          (setf (claude-agent-session-id agent) nil)
+          ;; Move to pending for re-matching
+          (push agent claude-multi--pending-agents))))))
 
 (defun claude-multi--rescan-pending-agents ()
   "Try to match pending agents to status files."
