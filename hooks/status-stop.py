@@ -20,7 +20,11 @@ def load_hook_input():
 
 
 def update_status_file(session_id, cwd):
-    """Update status file to mark session as finished."""
+    """Update status file to mark session as finished.
+
+    Preserves existing fields (model_name, claude_mode, etc.) while
+    updating the completion status.
+    """
     status_dir = Path("/tmp/claude-status")
     status_file = status_dir / f"status-{session_id}.json"
 
@@ -31,19 +35,23 @@ def update_status_file(session_id, cwd):
             "session_id": session_id,
             "timestamp": datetime.now().isoformat(),
             "claude_status": "finished",
-            "waiting_for_input": False
+            "waiting_for_input": False,
+            "is_busy": False
         }
     else:
-        # Read existing and update
+        # Read existing status and preserve all fields
         try:
             with open(status_file, 'r') as f:
                 status_data = json.load(f)
         except:
             status_data = {}
 
+        # Update completion-related fields only
         status_data["claude_status"] = "finished"
         status_data["timestamp"] = datetime.now().isoformat()
         status_data["waiting_for_input"] = False
+        status_data["is_busy"] = False
+        # Preserve model_name, claude_mode, and other fields
 
     # Write atomically
     try:

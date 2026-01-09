@@ -88,21 +88,26 @@
       (let ((agent-path (or (claude-agent-worktree-path agent)
                             (claude-agent-working-directory agent)
                             default-directory)))
-        (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
-          (let ((status-data (claude-multi--read-status-file file)))
-            (when status-data
-              (let ((cwd (alist-get 'cwd status-data)))
-                (when (and cwd agent-path
-                           (string= (claude-multi--normalize-path cwd)
-                                    (claude-multi--normalize-path agent-path)))
-                  (let ((session-id (alist-get 'session_id status-data)))
+        (catch 'matched
+          (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
+            (let ((status-data (claude-multi--read-status-file file)))
+              (when status-data
+                (let ((cwd (alist-get 'cwd status-data))
+                      (session-id (alist-get 'session_id status-data)))
+                  ;; Only match if: paths match AND session not already claimed
+                  (when (and cwd agent-path session-id
+                             (string= (claude-multi--normalize-path cwd)
+                                      (claude-multi--normalize-path agent-path))
+                             (not (gethash session-id claude-multi--session-to-agent)))
                     (claude-multi--log-status-debug "  Re-scan MATCHED agent %s to session %s"
                                                     (claude-agent-name agent) session-id)
                     (setf (claude-agent-session-id agent) session-id)
                     (puthash session-id agent claude-multi--session-to-agent)
                     (setq claude-multi--pending-agents
                           (delq agent claude-multi--pending-agents))
-                    (claude-multi--update-agent-from-status agent status-data)))))))))))
+                    (claude-multi--update-agent-from-status agent status-data)
+                    ;; Exit the file loop once we found a match for this agent
+                    (throw 'matched t))))))))
 
 ;;; Directory watcher
 
@@ -202,16 +207,20 @@
     (directory-file-name (file-truename (expand-file-name path)))))
 
 (defun claude-multi--find-agent-by-cwd (cwd)
-  "Find an agent whose worktree or directory matches CWD."
+  "Find an UNMAPPED agent whose worktree or directory matches CWD.
+Only returns agents that don't already have a session ID assigned.
+This allows multiple agents in the same directory to each get their own session."
   (when cwd
     (let ((normalized-cwd (claude-multi--normalize-path cwd)))
       (cl-find-if
        (lambda (agent)
-         (let ((agent-path (or (claude-agent-worktree-path agent)
-                               (claude-agent-working-directory agent))))
-           (when agent-path
-             (string= (claude-multi--normalize-path agent-path)
-                      normalized-cwd))))
+         ;; Only consider agents without a session ID (unmapped agents)
+         (and (not (claude-agent-session-id agent))
+              (let ((agent-path (or (claude-agent-worktree-path agent)
+                                    (claude-agent-working-directory agent))))
+                (when agent-path
+                  (string= (claude-multi--normalize-path agent-path)
+                           normalized-cwd)))))
        claude-multi--agents))))
 
 ;;;###autoload
@@ -229,25 +238,31 @@ Adds to pending list until session-id is discovered from status file."
                                     agent-path
                                     (claude-multi--normalize-path agent-path))
     ;; Also try to immediately find existing status file by cwd
-    (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
-      (let ((status-data (claude-multi--read-status-file file)))
-        (when status-data
-          (let ((cwd (alist-get 'cwd status-data)))
-            (claude-multi--log-status-debug "  Checking status file: %s, cwd: %s (normalized: %s)"
-                                            (file-name-nondirectory file)
-                                            cwd
-                                            (claude-multi--normalize-path cwd))
-            ;; Use claude-multi--normalize-path for consistent normalization
-            (when (and cwd agent-path
-                       (string= (claude-multi--normalize-path cwd)
-                                (claude-multi--normalize-path agent-path)))
-              (let ((session-id (alist-get 'session_id status-data)))
+    ;; Only match to sessions that aren't already claimed
+    (catch 'found
+      (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
+        (let ((status-data (claude-multi--read-status-file file)))
+          (when status-data
+            (let ((cwd (alist-get 'cwd status-data))
+                  (session-id (alist-get 'session_id status-data)))
+              (claude-multi--log-status-debug "  Checking status file: %s, cwd: %s (normalized: %s)"
+                                              (file-name-nondirectory file)
+                                              cwd
+                                              (claude-multi--normalize-path cwd))
+              ;; Use claude-multi--normalize-path for consistent normalization
+              ;; Only match if session is not already claimed by another agent
+              (when (and cwd agent-path session-id
+                         (string= (claude-multi--normalize-path cwd)
+                                  (claude-multi--normalize-path agent-path))
+                         (not (gethash session-id claude-multi--session-to-agent)))
                 (claude-multi--log-status-debug "  MATCHED! Session ID: %s" session-id)
                 (setf (claude-agent-session-id agent) session-id)
                 (puthash session-id agent claude-multi--session-to-agent)
                 (setq claude-multi--pending-agents
                       (delq agent claude-multi--pending-agents))
-                (claude-multi--update-agent-from-status agent status-data)))))))
+                (claude-multi--update-agent-from-status agent status-data)
+                ;; Stop searching once we find a match
+                (throw 'found t)))))))
     (when (memq agent claude-multi--pending-agents)
       (claude-multi--log-status-debug "  Agent %s remains pending (no match found)"
                                       (claude-agent-name agent)))))
@@ -403,14 +418,40 @@ This removes stale status files from previous sessions."
         (message "Cleaned up %d status file%s from %s"
                  count
                  (if (= count 1) "" "s")
-                 claude-multi-status-directory)))))
+                 claude-multi-status-directory))))))
+
+;;;###autoload
+(defun claude-multi/reset-agent-mappings ()
+  "Reset all session-to-agent mappings and force rematching.
+Use this if agents are incorrectly sharing status information.
+This is useful when multiple agents in the same directory are showing
+the same status data."
+  (interactive)
+  (message "Resetting agent-session mappings...")
+
+  ;; Clear the session-to-agent mapping hash table
+  (clrhash claude-multi--session-to-agent)
+
+  ;; Clear session IDs from all agents
+  (dolist (agent claude-multi--agents)
+    (setf (claude-agent-session-id agent) nil))
+
+  ;; Add all agents back to pending list
+  (setq claude-multi--pending-agents (copy-sequence claude-multi--agents))
+
+  ;; Force a rescan to remap correctly
+  (claude-multi--rescan-pending-agents)
+
+  (message "Reset complete. %d agent(s) remapped, %d still pending"
+           (hash-table-count claude-multi--session-to-agent)
+           (length claude-multi--pending-agents)))
 
 ;;; Utility functions
 
 (defun claude-multi--get-cached-status (agent)
   "Get cached status data for AGENT."
   (when-let ((session-id (claude-agent-session-id agent)))
-    (gethash session-id claude-multi--status-cache)))
+    (gethash session-id claude-multi--status-cache)))))
 
 (provide 'claude-multi-status)
 ;;; claude-multi-status.el ends here

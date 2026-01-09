@@ -14,6 +14,9 @@ Each Claude agent can generate a `status.json` file in its working directory tha
   "timestamp": "ISO 8601 string",
   "session_started": "ISO 8601 string",
   "waiting_for_input": boolean,
+  "is_busy": boolean,
+  "model_name": "string",
+  "claude_mode": "string",
   "current_activity": {
     "goal": "string",
     "waiting": boolean
@@ -62,6 +65,9 @@ Each Claude agent can generate a `status.json` file in its working directory tha
 | `timestamp` | string | Yes | ISO 8601 timestamp of last update |
 | `session_started` | string | Yes | ISO 8601 timestamp when session began |
 | `waiting_for_input` | boolean | Yes | Whether agent is waiting for user input |
+| `is_busy` | boolean | Yes | Whether agent is actively running (false if idle/waiting) |
+| `model_name` | string | No | Simple model name (opus/sonnet/haiku) |
+| `claude_mode` | string | No | Current mode (normal/plan/edit-on/bypass-permissions) |
 | `question` | string | Conditional | Question text (only when `waiting_for_input` is true) |
 
 ### current_activity
@@ -141,6 +147,9 @@ Git repository information (optional).
   "timestamp": "2025-12-18T18:35:02.928709",
   "session_started": "2025-12-18T17:34:07.541938",
   "waiting_for_input": false,
+  "is_busy": true,
+  "model_name": "opus",
+  "claude_mode": "normal",
   "current_activity": {
     "goal": "Implementing changes in hooks",
     "waiting": false
@@ -191,6 +200,9 @@ Git repository information (optional).
   "timestamp": "2025-12-18T16:50:45.987654",
   "session_started": "2025-12-18T16:30:15.789012",
   "waiting_for_input": true,
+  "is_busy": false,
+  "model_name": "sonnet",
+  "claude_mode": "normal",
   "current_activity": {
     "goal": "Working on implementation",
     "waiting": true
@@ -232,7 +244,12 @@ The JSON data is parsed and displayed in org-mode format with the following sect
 
 ### Status Indicator
 - Normal: `- Status :: {status}`
+- Busy: `- Status :: 🔄 {status} (BUSY)`
 - Waiting: Prominent warning box with "⏸ WAITING FOR INPUT"
+
+### Agent Configuration
+- **Model**: Simple model name (OPUS/SONNET/HAIKU)
+- **Mode**: Current Claude mode (NORMAL/PLAN/EDIT-ON/BYPASS-PERMISSIONS)
 
 ### Business Context
 - **Domains**: Technical areas (e.g., `=nlp=, =hooks=`)

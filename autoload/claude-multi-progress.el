@@ -93,10 +93,27 @@
              (status-file (expand-file-name "status.json" agent-dir))
              (ctx-pct nil)
              (file-count nil)
-             (duration nil))
+             (duration nil)
+             (model-name nil)
+             (claude-mode nil))
 
-        ;; Try to extract info from status.json if available
-        (when (file-exists-p status-file)
+        ;; Try to extract info from cached status first
+        (let ((cached-status (when (fboundp 'claude-multi--get-cached-status)
+                               (claude-multi--get-cached-status agent))))
+          (when cached-status
+            (setq model-name (alist-get 'model_name cached-status))
+            (setq claude-mode (alist-get 'claude_mode cached-status))
+            (let ((context (alist-get 'context_window cached-status))
+                  (git-info (alist-get 'git cached-status)))
+              (when context
+                (setq ctx-pct (alist-get 'percentage_used context)))
+              (when git-info
+                (let ((changed-files (alist-get 'changed_files git-info)))
+                  (when changed-files
+                    (setq file-count (length changed-files))))))))
+
+        ;; Fallback: try to extract info from status.json file if no cached data
+        (when (and (not model-name) (file-exists-p status-file))
           (condition-case nil
               (let* ((_json-object-type 'plist)
                      (_json-array-type 'list)
@@ -104,6 +121,8 @@
                      (data (json-read-file status-file))
                      (context (plist-get data :context_window))
                      (git-info (plist-get data :git)))
+                (setq model-name (plist-get data :model_name))
+                (setq claude-mode (plist-get data :claude_mode))
                 (when context
                   (setq ctx-pct (plist-get context :percentage_used)))
                 (when git-info
@@ -119,7 +138,7 @@
         (goto-char (point-max))
 
         ;; Ultra-compact headline format:
-        ;; ** EMOJI AGENT-ID | DOMAIN | TASK | DURATION | CTX% | FILES | :tags:
+        ;; ** EMOJI AGENT-ID [MODEL/MODE] | DOMAIN | TASK | DURATION | CTX% | FILES | :tags:
         (insert (format "\n** %s "
                        (claude-multi--get-status-icon (claude-agent-status agent))))
 
@@ -128,6 +147,17 @@
           (insert (claude-agent-id agent))
           (add-text-properties agent-id-start (point)
                                `(face (:foreground ,(claude-agent-color agent) :weight bold))))
+
+        ;; Add model/mode badge after agent ID
+        (when (or model-name claude-mode)
+          (insert " [")
+          (when model-name
+            (insert (upcase model-name)))
+          (when (and model-name claude-mode (not (string= claude-mode "normal")))
+            (insert "/"))
+          (when (and claude-mode (not (string= claude-mode "normal")))
+            (insert (upcase claude-mode)))
+          (insert "]"))
 
         ;; Add business domains if available (extract from business-context)
         (when business-context
@@ -519,16 +549,31 @@ Returns the position or nil if not found."
                (timestamp (alist-get 'timestamp status-data))
                (session-started (alist-get 'session_started status-data))
                (waiting (alist-get 'waiting_for_input status-data))
+               (is-busy (alist-get 'is_busy status-data))
+               (model-name (alist-get 'model_name status-data))
+               (claude-mode (alist-get 'claude_mode status-data))
                (activity (alist-get 'current_activity status-data))
                (context (alist-get 'context_window status-data))
                (git-info (alist-get 'git status-data)))
 
           ;; Build formatted output
           (with-temp-buffer
-            ;; Status indicator
+            ;; Status indicator with busy state
             (if waiting
                 (insert "#+BEGIN_WARNING\n⏸ *WAITING FOR INPUT*\n#+END_WARNING\n\n")
-              (insert (format "- Status :: %s\n\n" (or claude-status "Working..."))))
+              (let ((status-str (or claude-status "Working...")))
+                (when is-busy
+                  (setq status-str (concat "🔄 " status-str " (BUSY)")))
+                (insert (format "- Status :: %s\n\n" status-str))))
+
+            ;; Agent Configuration (Model and Mode)
+            (when (or model-name claude-mode)
+              (insert "*Agent Configuration*\n\n")
+              (when model-name
+                (insert (format "- Model :: %s\n" (upcase model-name))))
+              (when claude-mode
+                (insert (format "- Mode :: %s\n" (upcase claude-mode))))
+              (insert "\n"))
 
             ;; Context window usage
             (when context

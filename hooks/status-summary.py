@@ -58,6 +58,110 @@ def save_state(session_id, state):
         print(f"Error saving state: {e}", file=sys.stderr)
 
 
+def extract_model_info(transcript_path):
+    """Extract model name and mode from transcript file.
+
+    Returns dict with 'model_name' and 'claude_mode' keys.
+    Model name is simplified (opus/sonnet/haiku).
+    Mode is one of: normal/plan/edit-on/bypass-permissions.
+    """
+    if not transcript_path or not os.path.exists(transcript_path):
+        return {"model_name": None, "claude_mode": None}
+
+    try:
+        with open(transcript_path, 'r') as f:
+            # Read last 100 lines for efficiency (avoid reading huge files)
+            lines = f.readlines()[-100:]
+
+        model_name = None
+        claude_mode = None
+
+        # Search backwards for most recent model and mode info
+        for line in reversed(lines):
+            line = line.strip()
+            if not line:
+                continue
+
+            try:
+                entry = json.loads(line)
+
+                # Extract model from assistant messages
+                if entry.get('type') == 'assistant' and 'message' in entry:
+                    message = entry['message']
+                    model = message.get('model', '')
+
+                    # Map full model ID to simple name
+                    if model and not model_name:
+                        model_lower = model.lower()
+                        if 'opus' in model_lower:
+                            model_name = 'opus'
+                        elif 'sonnet' in model_lower:
+                            model_name = 'sonnet'
+                        elif 'haiku' in model_lower:
+                            model_name = 'haiku'
+                        else:
+                            # Use last meaningful part of model ID
+                            parts = model.split(':')[-1].split('-')
+                            model_name = parts[0] if parts else 'unknown'
+
+                # Detect mode from system reminders or message content
+                if not claude_mode:
+                    content = ""
+
+                    # Extract content from different message types
+                    if entry.get('type') == 'user':
+                        content = entry.get('content', '')
+                    elif entry.get('type') == 'assistant' and 'message' in entry:
+                        message_content = entry['message'].get('content', [])
+                        if isinstance(message_content, list):
+                            for block in message_content:
+                                if isinstance(block, dict) and block.get('type') == 'text':
+                                    content += block.get('text', '')
+                        elif isinstance(message_content, str):
+                            content = message_content
+
+                    # Check for mode indicators
+                    if content:
+                        content_lower = content.lower()
+
+                        # Plan mode detection
+                        if 'plan mode is active' in content_lower or \
+                           'plan mode still active' in content_lower or \
+                           'read-only except plan file' in content_lower or \
+                           'you must not make any edits' in content_lower:
+                            claude_mode = 'plan'
+
+                        # Edit-on mode detection
+                        elif 'edit-on mode' in content_lower or \
+                             'edit mode is active' in content_lower:
+                            claude_mode = 'edit-on'
+
+                        # Bypass permissions mode detection
+                        elif 'bypass permissions' in content_lower or \
+                             'permission mode' in content_lower and 'bypass' in content_lower:
+                            claude_mode = 'bypass-permissions'
+
+                # If we found both, stop searching
+                if model_name and claude_mode:
+                    break
+
+            except json.JSONDecodeError:
+                continue
+
+        # Default to normal mode if not detected as special mode
+        if not claude_mode:
+            claude_mode = 'normal'
+
+        return {
+            "model_name": model_name,
+            "claude_mode": claude_mode
+        }
+
+    except Exception as e:
+        print(f"Error extracting model info: {e}", file=sys.stderr)
+        return {"model_name": None, "claude_mode": None}
+
+
 def get_git_info(cwd):
     """Get git repository information if available."""
     try:
@@ -231,7 +335,7 @@ def infer_goal_from_changes(changes):
         return "Working on task"
 
 
-def generate_status_json(state, cwd, context_info=None, git_info=None):
+def generate_status_json(state, cwd, context_info=None, git_info=None, model_info=None):
     """Generate the status data as JSON."""
     changes = state.get("changes", [])
     goal = state.get("current_goal", "Working on task")
@@ -250,6 +354,9 @@ def generate_status_json(state, cwd, context_info=None, git_info=None):
     elif claude_status != "finished":
         claude_status = "running"
 
+    # Determine busy status: idle if waiting for input, otherwise busy
+    is_busy = not waiting_for_input and claude_status not in ["finished", "error"]
+
     status_data = {
         "cwd": str(cwd),
         "session_id": state.get("session_id"),
@@ -257,11 +364,19 @@ def generate_status_json(state, cwd, context_info=None, git_info=None):
         "session_started": started_at,
         "claude_status": claude_status,
         "waiting_for_input": waiting_for_input,
+        "is_busy": is_busy,
         "current_activity": {
             "goal": goal,
             "waiting": waiting_for_input
         }
     }
+
+    # Add model and mode information
+    if model_info:
+        if model_info.get("model_name"):
+            status_data["model_name"] = model_info["model_name"]
+        if model_info.get("claude_mode"):
+            status_data["claude_mode"] = model_info["claude_mode"]
 
     # Add context window information
     if context_info:
@@ -425,8 +540,11 @@ def main():
     # Get git repository information
     git_info = get_git_info(cwd)
 
+    # Extract model and mode information
+    model_info = extract_model_info(transcript_path)
+
     # Generate and write status JSON
-    status_content = generate_status_json(state, cwd, context_info, git_info)
+    status_content = generate_status_json(state, cwd, context_info, git_info, model_info)
     write_status_file(session_id, cwd, status_content)
 
     sys.exit(0)
