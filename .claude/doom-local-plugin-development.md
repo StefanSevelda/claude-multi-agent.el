@@ -151,68 +151,74 @@ Since the variables are already defined when your module loads, you can set them
 
 ### 6. Keybinding Configuration
 
-**CRITICAL: Use `doom-after-modules-config-hook` for custom module keybindings.**
+**CRITICAL: Just use `map!` directly in config.el - Doom handles everything.**
 
-For custom modules loaded via symlink, use Doom's module hook:
+Reference: https://rameezkhan.me/posts/2020/2020-07-03--adding-keybindings-to-doom-emacs/
 
 ```elisp
-;; In config.el
-(add-hook 'doom-after-modules-config-hook
-  (defun claude-multi--setup-keybindings ()
-    "Set up keybindings after all Doom modules are configured."
-    (map! :leader
-          :prefix ("c m" . "claude-multi")
-          :desc "Start session" "s" #'claude-multi/start-session
-          :desc "Spawn agent"   "a" #'claude-multi/spawn-agent)))
+;; In config.el - at top level, no wrappers needed
+(map! :leader
+      (:prefix-map ("c" . "code")
+       (:prefix ("m" . "claude-multi")
+        :desc "Start session" "s" #'claude-multi/start-session
+        :desc "Spawn agent"   "a" #'claude-multi/spawn-agent)))
 ```
 
 **Why this works:**
-- The hook runs AFTER all Doom modules are fully configured
-- This ensures evil and the leader key are completely set up
-- This is the proper way for custom modules to register keybindings
+- Doom's `map!` macro handles all timing internally
+- No need for hooks, use-package!, or any wrappers
+- The `:prefix-map` extends existing prefixes properly
+- This is the standard pattern in Doom community guides
 
-**Why `use-package! evil :config` doesn't work:**
-- Evil is already loaded before our module's config.el runs
-- The `:config` block only executes when the package is first configured
-- Since evil is already configured, our :config block never runs
+**Key points:**
+- Use `:prefix-map` when extending existing prefixes (like "c" for code)
+- Use `:prefix` for your custom sub-prefixes
+- Just put it directly in config.el - no complexity needed
 
 **Common mistakes (DON'T do these):**
 
-❌ **WRONG - Top-level `after!` doesn't work reliably:**
+All of these are unnecessary complexity:
+
+❌ **WRONG - Using hooks:**
 ```elisp
-;; This may not execute at the right time during startup
+(add-hook 'doom-after-modules-config-hook
+  (defun my-module--setup-keybindings ()
+    (map! :leader ...)))
+```
+
+❌ **WRONG - Using `after!`:**
+```elisp
 (after! evil
   (map! :leader ...))
 ```
 
-❌ **WRONG - `+bindings.el` is NOT a Doom convention:**
+❌ **WRONG - Using `use-package!`:**
 ```elisp
-;; +bindings.el  <-- This file is not automatically loaded by Doom
+(use-package! evil
+  :config
+  (map! :leader ...))
+```
+
+❌ **WRONG - Creating `+bindings.el`:**
+```elisp
+;; +bindings.el is not a Doom convention
 (map! :leader ...)
 ```
 
-❌ **WRONG - Conditional loading with `featurep`:**
+**✅ CORRECT - Simple top-level `map!`:**
 ```elisp
-;; Complex and unreliable
-(if (featurep 'doom-keybinds)
-    (setup-keybindings)
-  (with-eval-after-load ...))
+;; Just this, nothing else needed
+(map! :leader
+      (:prefix-map ("c" . "code")
+       (:prefix ("m" . "my-module")
+        :desc "Command" "c" #'my-command)))
 ```
 
-**✅ CORRECT - Use `doom-after-modules-config-hook`:**
-```elisp
-(add-hook 'doom-after-modules-config-hook
-  (defun my-module--setup-keybindings ()
-    (map! :leader
-          :prefix ("c m" . "my-module")
-          :desc "Command" "c" #'my-command)))
-```
-
-**Key insights:**
-1. Custom modules (via symlink) load differently than built-in Doom modules
-2. Built-in modules can use `use-package!` :config because they control package loading
-3. Custom modules must use hooks because packages are already loaded
-4. `doom-after-modules-config-hook` is specifically for this use case
+**Why all the complexity failed:**
+- Doom's `map!` macro is smart enough to handle timing
+- It internally defers execution until the right moment
+- No manual timing control needed
+- Just trust the macro and keep it simple!
 
 **Verification:**
 ```elisp
