@@ -876,19 +876,14 @@ Reads the org-mode properties to determine which kitty window to focus."
   (let ((agent-info (claude-multi--get-agent-info-at-point)))
     (if (not agent-info)
         (message "No agent found at point. Place cursor on an agent headline.")
-      (let* ((kitty-window (plist-get agent-info :kitty-window))
-             (agent-name (plist-get agent-info :agent-name))
+      (let* ((window-id (plist-get agent-info :kitty-window))
              (display-name (plist-get agent-info :display-name))
-             ;; Try to get window ID from property first, then from mapping
-             (window-id (or kitty-window
-                           (when agent-name
-                             (claude-multi--read-agent-mapping agent-name))))
              (listen-addr (or (and (boundp 'claude-multi-kitty-listen-address)
                                   claude-multi-kitty-listen-address)
                              (getenv "KITTY_LISTEN_ON")
                              "unix:/tmp/kitty-claude")))
         (if (not window-id)
-            (message "No kitty window ID found for %s. Agent may not have been spawned yet or mapping is missing."
+            (message "No kitty window ID found for %s. Agent may not have started running Claude commands yet (window ID is written to status.json after first Claude hook execution)."
                     display-name)
           (condition-case err
               (progn

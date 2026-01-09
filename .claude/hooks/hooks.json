@@ -1,16 +1,6 @@
 {
   "hooks": {
-    "PostToolUse": [
-      {
-        "matcher": "^(Edit|Write)$",
-        "hooks": [
-          {
-            "type": "prompt",
-            "prompt": "After editing elisp files, run syntax validation tests with: ./test/run-syntax-tests.sh\n\nNote: The test script validates claude-multi-status.el specifically. This is intentional - it ensures the core module loads correctly. Tests failing for other files is expected and okay. Only report test failures if they indicate actual syntax errors (unbalanced parens, load failures)."
-          }
-        ]
-      }
-    ],
+    "PostToolUse": [],
     "SessionEnd": [
       {
         "hooks": [
