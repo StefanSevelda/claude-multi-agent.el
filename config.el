@@ -588,6 +588,12 @@ Keybindings:
 
 ;; Add keybindings for progress mode
 (define-key claude-multi-progress-mode-map (kbd "f") 'claude-multi/focus-agent-at-point)
+
+;; Evil mode keybindings for progress mode
+(with-eval-after-load 'evil
+  (evil-define-key 'normal claude-multi-progress-mode-map
+    (kbd "f") 'claude-multi/focus-agent-at-point))
+
 ;; Note: claude-multi/kill-agent-at-point available via M-x but no default keybinding
 ;; to avoid conflicts with evil mode
 
