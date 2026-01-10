@@ -895,5 +895,24 @@ Reads the org-mode properties to determine which kitty window to focus."
             (error
              (message "Failed to focus window %s: %s" window-id (error-message-string err)))))))))
 
+;;;###autoload
+(defun claude-multi/kill-agent-at-point ()
+  "Kill the agent at point in the progress buffer.
+Works entirely from status files - uses SESSION_ID property from org-mode.
+Closes kitty window and removes status file."
+  (interactive)
+  (let ((agent-info (claude-multi--get-agent-info-at-point)))
+    (if (not agent-info)
+        (message "No agent found at point. Place cursor on an agent headline.")
+      (let* ((session-id (plist-get agent-info :session-id))
+             (display-name (plist-get agent-info :display-name)))
+        (if (not session-id)
+            (message "No session ID found for %s. Cannot kill agent." display-name)
+          (when (y-or-n-p (format "Really kill agent %s? " display-name))
+            (require 'claude-multi-status)
+            (if (claude-multi--kill-agent-by-session-id session-id)
+                (message "Killed agent: %s" display-name)
+              (message "Failed to kill agent %s" display-name))))))))
+
 (provide 'claude-multi-progress)
 ;;; progress.el ends here

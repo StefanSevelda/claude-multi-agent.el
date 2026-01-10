@@ -383,7 +383,7 @@ Uses WebSocket if available, falls back to polling if configured."
 
 ;;;###autoload
 (defun claude-multi--kill-agent (agent)
-  "Kill AGENT and cleanup all resources (worktree, status watch, progress buffer)."
+  "Kill AGENT and cleanup all resources (worktree, status watch, progress buffer, status file)."
   (when agent
     ;; Mark agent as failed/killed and update status in progress buffer
     (setf (claude-agent-status agent) 'failed)
@@ -394,7 +394,10 @@ Uses WebSocket if available, falls back to polling if configured."
     (when-let ((timer (claude-agent-status-timer agent)))
       (cancel-timer timer))
 
-    ;; No need to unregister - status tracking is fully file-based
+    ;; Delete status file if agent has a session ID
+    (when-let ((session-id (claude-agent-session-id agent)))
+      (require 'claude-multi-status)
+      (claude-multi--delete-status-file session-id))
 
     ;; Close kitty window
     (let* ((window-id (claude-agent-kitty-window-id agent))
