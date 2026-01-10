@@ -1,6 +1,5 @@
 {
   "hooks": {
-    "PostToolUse": [],
     "SessionEnd": [
       {
         "hooks": [

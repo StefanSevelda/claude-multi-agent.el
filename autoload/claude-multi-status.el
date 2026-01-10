@@ -182,5 +182,46 @@ This removes stale status files from previous sessions."
                  (if (= count 1) "" "s")
                  claude-multi-status-directory)))))
 
+;;; Stateless agent discovery
+
+;;;###autoload
+(defun claude-multi--get-agents-from-status-files ()
+  "Discover all agents from status files in /tmp/claude-status/.
+Returns list of plists with agent information extracted from status files.
+This provides a stateless way to know about all running Claude sessions."
+  (let ((status-files (claude-multi--get-all-status-files))
+        (agents nil))
+    (dolist (entry status-files)
+      (let* ((data (cdr entry))
+             (session-id (alist-get 'session_id data))
+             (agent-name (alist-get 'agent_name data))
+             (kitty-window-id (alist-get 'kitty_window_id data))
+             (kitty-tab-id (alist-get 'kitty_tab_id data))
+             (cwd (alist-get 'cwd data))
+             (status (alist-get 'claude_status data))
+             (timestamp (alist-get 'timestamp data))
+             (waiting-for-input (alist-get 'waiting_for_input data))
+             (git (alist-get 'git data))
+             (branch (when git (alist-get 'branch git)))
+             (dir-name (when cwd (file-name-nondirectory (directory-file-name cwd))))
+             (display-name (cond
+                            (agent-name agent-name)
+                            ((and dir-name branch) (format "%s (%s)" dir-name branch))
+                            (dir-name dir-name)
+                            (t (format "Session %s" (substring session-id 0 8))))))
+        (when session-id
+          (push (list :session-id session-id
+                     :agent-name agent-name
+                     :display-name display-name
+                     :kitty-window-id kitty-window-id
+                     :kitty-tab-id kitty-tab-id
+                     :working-directory cwd
+                     :status (intern status)
+                     :waiting-for-input waiting-for-input
+                     :timestamp timestamp
+                     :branch-name branch)
+                agents))))
+    (nreverse agents)))
+
 (provide 'claude-multi-status)
 ;;; claude-multi-status.el ends here

@@ -193,7 +193,14 @@ When enabled, agent status will be shown as org-mode tags
 
 ;; Global variables
 (defvar claude-multi--agents nil
-  "List of all active agents.")
+  "DEPRECATED: Legacy in-memory agent list.
+This variable is no longer the primary source of agent information.
+Use `claude-multi--get-agents-from-status-files' instead to discover
+agents from /tmp/claude-status/ files.
+
+Keeping this for backwards compatibility with code that may reference it,
+but it should not be relied upon as it can become stale or inconsistent
+with actual running Claude sessions.")
 
 (defvar claude-multi--agent-id-counter 0
   "Counter for generating unique agent IDs.")
@@ -363,32 +370,37 @@ Agent will cd into the worktree directory before launching Claude."
 
 ;;;###autoload
 (defun claude-multi/dashboard ()
-  "Show a dashboard with all agents and their status."
+  "Show a dashboard with all agents discovered from status files."
   (interactive)
-  (let ((buf (get-buffer-create "*Claude Multi-Agent Dashboard.org*")))
+  (require 'claude-multi-status)
+  (let ((buf (get-buffer-create "*Claude Multi-Agent Dashboard.org*"))
+        (agents (claude-multi--get-agents-from-status-files)))
     (with-current-buffer buf
       (read-only-mode -1)
       (erase-buffer)
       (insert "#+TITLE: Claude Multi-Agent Dashboard\n\n")
-      (if (null claude-multi--agents)
-          (insert "No active agents.\n")
-        (dolist (agent (reverse claude-multi--agents))
-          (insert (format "* %s %s [%s]\n"
-                         (claude-multi--get-status-icon (claude-agent-status agent))
-                         (claude-agent-name agent)
-                         (upcase (symbol-name (claude-agent-status agent)))))
-          (insert (format "- ID :: %s\n" (claude-agent-id agent)))
-          (insert (format "- Worktree :: %s\n" (or (claude-agent-worktree-path agent) "N/A")))
-          (insert (format "- Created :: %s\n" (format-time-string "[%Y-%m-%d %a %H:%M:%S]"
-                                                                 (claude-agent-created-at agent))))
-          (when (claude-agent-completed-at agent)
-            (insert (format "- Completed :: %s\n" (format-time-string "[%Y-%m-%d %a %H:%M:%S]"
-                                                                     (claude-agent-completed-at agent))))
-            (insert (format "- Duration :: %s\n"
-                           (claude-multi--format-duration
-                            (claude-agent-created-at agent)
-                            (claude-agent-completed-at agent)))))
-          (insert "\n")))
+      (if (null agents)
+          (insert "No active agents found in /tmp/claude-status/.\n")
+        (dolist (agent-plist agents)
+          (let ((display-name (plist-get agent-plist :display-name))
+                (session-id (plist-get agent-plist :session-id))
+                (status (plist-get agent-plist :status))
+                (kitty-window (plist-get agent-plist :kitty-window-id))
+                (directory (plist-get agent-plist :working-directory))
+                (branch (plist-get agent-plist :branch-name))
+                (timestamp (plist-get agent-plist :timestamp)))
+            (insert (format "* %s %s [%s]\n"
+                           (claude-multi--get-status-icon status)
+                           display-name
+                           (upcase (symbol-name status))))
+            (insert (format "- Session ID :: %s\n" session-id))
+            (when kitty-window
+              (insert (format "- Kitty Window :: %s\n" kitty-window)))
+            (insert (format "- Directory :: %s\n" (or directory "N/A")))
+            (when branch
+              (insert (format "- Branch :: %s\n" branch)))
+            (insert (format "- Last Updated :: %s\n" (or timestamp "N/A")))
+            (insert "\n"))))
       (org-mode)
       (read-only-mode 1)
       (goto-char (point-min)))

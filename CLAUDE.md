@@ -148,6 +148,22 @@ If a file approaches 800 lines:
 - Add comments for non-obvious logic
 - Follow Emacs Lisp conventions (dash-separated names, etc.)
 
+### Parenthesis Validation
+
+**CRITICAL**: Before inserting new functions or editing existing ones, ALWAYS validate parenthesis balance:
+
+```bash
+# Test the function loads without errors
+./emacs-eval.sh '(progn (load-file "path/to/file.el") (message "Loaded successfully"))'
+```
+
+**Why**: Emacs Lisp is extremely sensitive to parenthesis imbalance. A single missing or extra paren will break the entire file. Always verify:
+1. Functions can be loaded without errors
+2. Parentheses are properly balanced
+3. No syntax errors before committing
+
+This prevents breaking the codebase with syntax errors.
+
 ### Dependencies
 
 Minimal external dependencies:
