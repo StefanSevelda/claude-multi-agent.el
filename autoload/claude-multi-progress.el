@@ -155,6 +155,8 @@
                     (insert (format ":SESSION_ID: %s\n" session-id))
                     (when kitty-id
                       (insert (format ":KITTY_WINDOW: %s\n" kitty-id)))
+                    (when agent-name
+                      (insert (format ":AGENT_NAME: %s\n" agent-name)))
                     (insert (format ":DIRECTORY: %s\n" cwd))
                     (insert (format ":STATUS: %s\n" (upcase status)))
                     (when model
@@ -191,18 +193,20 @@ Specifically makes AGENT_NAME property editable so users can rename agents."
             (let ((start (line-beginning-position)))
               (when (re-search-forward "^:END:$" nil t)
                 (let ((end (line-end-position)))
-                  ;; Remove read-only text property from drawer region
-                  (remove-text-properties start end '(read-only nil))
-                  ;; Also make AGENT_NAME line specifically editable
+                  ;; Make the entire drawer editable by setting inhibit-read-only
+                  (put-text-property start end 'read-only nil)
+                  (put-text-property start end 'inhibit-read-only t)
+                  ;; Also make AGENT_NAME line specifically editable and visually distinct
                   (save-excursion
                     (goto-char start)
                     (when (re-search-forward "^:AGENT_NAME: " end t)
                       (let ((name-start (match-end 0))
                             (name-end (line-end-position)))
-                        ;; Make the value part editable and visually distinct
-                        (remove-text-properties name-start name-end '(read-only nil))
-                        (add-text-properties name-start name-end
-                                           '(face font-lock-variable-name-face))))))))))))))
+                        ;; Make the value part editable and highlighted
+                        (put-text-property name-start name-end 'read-only nil)
+                        (put-text-property name-start name-end 'inhibit-read-only t)
+                        (put-text-property name-start name-end 'face 'font-lock-variable-name-face)
+                        (put-text-property name-start name-end 'rear-nonsticky t)))))))))))))
 
 ;;;###autoload
 (defun claude-multi--get-status-icon-from-string (status-str)

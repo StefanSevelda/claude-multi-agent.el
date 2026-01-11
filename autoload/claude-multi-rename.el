@@ -28,6 +28,31 @@
 Used to detect actual changes vs. buffer refreshes.")
 
 ;;;###autoload
+(defun claude-multi/rename-agent-at-point ()
+  "Rename the agent at point in the progress buffer.
+Prompts for new name and updates status.json and kitty window title."
+  (interactive)
+  (let ((agent-info (claude-multi--get-agent-info-at-point)))
+    (if (not agent-info)
+        (message "No agent found at point. Place cursor on an agent headline.")
+      (let* ((session-id (plist-get agent-info :session-id))
+             (kitty-window (plist-get agent-info :kitty-window))
+             (current-name (or (plist-get agent-info :agent-name)
+                             (plist-get agent-info :display-name)))
+             (new-name (read-string (format "Rename '%s' to: " current-name) current-name)))
+        (if (string-empty-p new-name)
+            (message "Agent name cannot be empty")
+          ;; Update status file
+          (claude-multi--update-status-agent-name session-id new-name)
+          ;; Update kitty window title
+          (when kitty-window
+            (claude-multi--update-kitty-window-title kitty-window new-name session-id))
+          ;; Refresh progress buffer to show new name
+          (when (fboundp 'claude-multi--refresh-progress-from-status-files)
+            (claude-multi--refresh-progress-from-status-files))
+          (message "Agent renamed to: %s" new-name))))))
+
+;;;###autoload
 (defun claude-multi--setup-rename-hooks ()
   "Setup hooks for detecting AGENT_NAME property changes in progress buffer."
   (when (derived-mode-p 'claude-multi-progress-mode)
