@@ -335,7 +335,7 @@ def infer_goal_from_changes(changes):
         return "Working on task"
 
 
-def generate_status_json(state, cwd, context_info=None, git_info=None, model_info=None):
+def generate_status_json(state, cwd, context_info=None, git_info=None, model_info=None, status_file_path=None):
     """Generate the status data as JSON."""
     changes = state.get("changes", [])
     goal = state.get("current_goal", "Working on task")
@@ -360,7 +360,21 @@ def generate_status_json(state, cwd, context_info=None, git_info=None, model_inf
     # Extract kitty and agent information from environment
     kitty_window_id = os.environ.get("KITTY_WINDOW_ID")
     kitty_tab_id = os.environ.get("KITTY_TAB_ID")
-    agent_name = os.environ.get("CLAUDE_AGENT_NAME")
+    env_agent_name = os.environ.get("CLAUDE_AGENT_NAME")
+
+    # Preserve custom agent name if it already exists in status file
+    # (user may have renamed the agent via org property editing)
+    existing_agent_name = None
+    if status_file.exists():
+        try:
+            with open(status_file, 'r') as f:
+                existing_data = json.load(f)
+                existing_agent_name = existing_data.get("agent_name")
+        except (json.JSONDecodeError, IOError):
+            pass  # If file is corrupted or unreadable, continue with env name
+
+    # Use existing custom name if present, otherwise use environment variable
+    agent_name = existing_agent_name if existing_agent_name else env_agent_name
 
     status_data = {
         "cwd": str(cwd),

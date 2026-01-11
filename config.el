@@ -577,14 +577,21 @@ Works with both in-memory agents and persistent sessions from status files."
   "Major mode for Claude Multi-Agent progress tracking in org-mode format.
 
 Keybindings:
-  \\[claude-multi/focus-agent-at-point] - Focus on agent at point"
+  \\[claude-multi/focus-agent-at-point] - Focus on agent at point
+
+Org Properties (editable):
+  Edit :AGENT_NAME: property in drawer to rename agents.
+  Changes auto-sync to status.json and kitty window title."
   (setq-local auto-revert-interval 0.5)
   (auto-revert-mode 1)
   (read-only-mode 1)
   ;; Enable org-mode features
   (when (fboundp 'org-indent-mode)
     (org-indent-mode 1))
-  (visual-line-mode 1))
+  (visual-line-mode 1)
+  ;; Setup rename hooks for property-based renaming
+  (require 'claude-multi-rename)
+  (claude-multi--setup-rename-hooks))
 
 ;; Add keybindings for progress mode
 (define-key claude-multi-progress-mode-map (kbd "f") 'claude-multi/focus-agent-at-point)

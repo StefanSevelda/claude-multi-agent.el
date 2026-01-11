@@ -173,7 +173,36 @@
                     (insert ":END:\n\n"))))
 
               ;; Update stats
-              (claude-multi--update-session-stats-from-files status-files)))))))
+              (claude-multi--update-session-stats-from-files status-files)
+
+              ;; Make property drawers editable
+              (claude-multi--make-properties-editable)))))))
+
+;;;###autoload
+(defun claude-multi--make-properties-editable ()
+  "Make org property drawers editable in read-only progress buffer.
+Specifically makes AGENT_NAME property editable so users can rename agents."
+  (when (buffer-live-p claude-multi--progress-buffer)
+    (with-current-buffer claude-multi--progress-buffer
+      (let ((inhibit-read-only t))
+        (save-excursion
+          (goto-char (point-min))
+          (while (re-search-forward "^:PROPERTIES:$" nil t)
+            (let ((start (line-beginning-position)))
+              (when (re-search-forward "^:END:$" nil t)
+                (let ((end (line-end-position)))
+                  ;; Remove read-only text property from drawer region
+                  (remove-text-properties start end '(read-only nil))
+                  ;; Also make AGENT_NAME line specifically editable
+                  (save-excursion
+                    (goto-char start)
+                    (when (re-search-forward "^:AGENT_NAME: " end t)
+                      (let ((name-start (match-end 0))
+                            (name-end (line-end-position)))
+                        ;; Make the value part editable and visually distinct
+                        (remove-text-properties name-start name-end '(read-only nil))
+                        (add-text-properties name-start name-end
+                                           '(face font-lock-variable-name-face))))))))))))))
 
 ;;;###autoload
 (defun claude-multi--get-status-icon-from-string (status-str)
