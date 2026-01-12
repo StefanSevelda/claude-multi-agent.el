@@ -237,31 +237,39 @@ This provides a stateless way to know about all running Claude sessions."
 (defun claude-multi--kill-agent-by-session-id (session-id)
   "Kill agent identified by SESSION-ID using status file information.
 This works entirely from status files - no in-memory agent required.
-Closes kitty window and deletes status file."
-  (when-let* ((status-files (claude-multi--get-all-status-files))
-              (agent-entry (cl-find-if
-                           (lambda (entry)
-                             (equal session-id (alist-get 'session_id (cdr entry))))
-                           status-files))
-              (data (cdr agent-entry))
-              (kitty-window-id (alist-get 'kitty_window_id data)))
-    ;; Close kitty window
-    (let ((listen-addr (or (getenv "KITTY_LISTEN_ON")
-                          "unix:/tmp/kitty-claude")))
-      (when kitty-window-id
-        (call-process-shell-command
-         (format "kitty @ --to=%s close-window --match=id:%s 2>/dev/null"
-                listen-addr kitty-window-id)
-         nil 0)))
-    ;; Delete status file
-    (claude-multi--delete-status-file session-id)
-    ;; Refresh progress buffer if it exists
-    (when (and (boundp 'claude-multi--progress-buffer)
-               (buffer-live-p claude-multi--progress-buffer))
-      (with-current-buffer claude-multi--progress-buffer
-        (when (fboundp 'claude-multi--refresh-progress-from-status-files)
-          (claude-multi--refresh-progress-from-status-files))))
-    t))
+Closes kitty window (if it exists) and deletes status file."
+  (let* ((status-files (claude-multi--get-all-status-files))
+         (agent-entry (cl-find-if
+                      (lambda (entry)
+                        (equal session-id (alist-get 'session_id (cdr entry))))
+                      status-files)))
+    (if (not agent-entry)
+        ;; Agent not found, but try to delete status file anyway
+        (progn
+          (claude-multi--delete-status-file session-id)
+          nil)
+      ;; Agent found, close window and delete status file
+      (let* ((data (cdr agent-entry))
+             (kitty-window-id (alist-get 'kitty_window_id data))
+             (listen-addr (or (getenv "KITTY_LISTEN_ON")
+                             "unix:/tmp/kitty-claude")))
+        ;; Close kitty window if it exists
+        (when (and kitty-window-id
+                   (not (string= kitty-window-id "null"))
+                   (not (eq kitty-window-id 'null)))
+          (call-process-shell-command
+           (format "kitty @ --to=%s close-window --match=id:%s 2>/dev/null"
+                  listen-addr kitty-window-id)
+           nil 0))
+        ;; Always delete status file
+        (claude-multi--delete-status-file session-id)
+        ;; Refresh progress buffer if it exists
+        (when (and (boundp 'claude-multi--progress-buffer)
+                   (buffer-live-p claude-multi--progress-buffer))
+          (with-current-buffer claude-multi--progress-buffer
+            (when (fboundp 'claude-multi--refresh-progress-from-status-files)
+              (claude-multi--refresh-progress-from-status-files))))
+        t))))
 
 (provide 'claude-multi-status)
 ;;; claude-multi-status.el ends here
