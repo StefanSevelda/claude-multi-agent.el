@@ -140,6 +140,11 @@ Specifically makes AGENT_NAME property editable so users can rename agents."
           ;; Clear agents section and rebuild
           (save-excursion
             (goto-char (point-min))
+            ;; If "* Agents" section doesn't exist, initialize buffer structure first
+            (unless (re-search-forward "^\\* Agents" nil t)
+              (claude-multi--init-progress-buffer)
+              (goto-char (point-min)))
+            ;; Now find the Agents section (it must exist after init)
             (when (re-search-forward "^\\* Agents" nil t)
               (let ((agents-start (line-beginning-position)))
                 ;; Delete from "* Agents" to end of buffer
