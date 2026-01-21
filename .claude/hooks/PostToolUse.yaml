@@ -1,0 +1,28 @@
+- name: run-tests-after-code-changes
+  match:
+    tools: [Edit, Write]
+    pathPattern: "^(autoload|test)/.*\\.el$"
+  action:
+    type: bash
+    command: |
+      # Only run tests for the specific file that changed
+      FILE="${TOOL_PATH}"
+
+      if [[ "$FILE" =~ ^autoload/ ]]; then
+        # Find corresponding test file
+        MODULE=$(basename "$FILE" .el)
+        TEST_FILE="test/test-${MODULE#claude-multi-}.el"
+
+        if [ -f "$TEST_FILE" ]; then
+          echo "Running tests for $MODULE..."
+          buttercup -L . -L autoload -L test -L .test-deps/buttercup -L .test-deps/dash.el -L .test-deps/s.el -L .test-deps/f.el -l buttercup -l "$TEST_FILE" -f buttercup-run
+        fi
+      elif [[ "$FILE" =~ ^test/ ]]; then
+        # Run the test file directly
+        echo "Running test file $FILE..."
+        buttercup -L . -L autoload -L test -L .test-deps/buttercup -L .test-deps/dash.el -L .test-deps/s.el -L .test-deps/f.el -l buttercup -l "$FILE" -f buttercup-run
+      fi
+
+      # Exit 0 even if tests fail (don't block commits)
+      exit 0
+    timeout: 30000

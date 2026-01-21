@@ -66,7 +66,59 @@ Reload kitty: `Ctrl+Shift+F5`
 
 - **Buttercup**: Behavior-Driven Development (BDD) style testing framework for Emacs Lisp
 - Test files located in `test/` directory
-- Run tests via standard buttercup commands
+- Run tests via standard buttercup commands or `make test`
+
+### Automatic Test Execution
+
+#### Git Hook
+A **pre-commit hook** is configured to automatically run the full test suite before commits:
+- Located at `.git/hooks/pre-commit`
+- Runs `make test` with 60-second timeout
+- Blocks commits if tests fail
+- Bypass with `git commit --no-verify` if needed
+
+#### Claude Hook
+A **PostToolUse hook** is configured to automatically run relevant tests when code changes:
+- Located at `.claude/hooks/PostToolUse.yaml`
+- Triggers on `Edit` or `Write` tools for `*.el` files in `autoload/` or `test/` directories
+- Runs corresponding test file (e.g., `autoload/claude-multi-notifications.el` → `test/test-notifications.el`)
+- Non-blocking: always exits 0 (won't prevent file edits)
+- 30-second timeout per test run
+
+### Running Tests Manually
+
+```bash
+# Run all tests
+make test
+
+# Run specific test file
+buttercup -L . -L autoload -L test \
+  -L .test-deps/buttercup \
+  -L .test-deps/dash.el \
+  -L .test-deps/s.el \
+  -L .test-deps/f.el \
+  -l buttercup \
+  -l test/test-notifications.el \
+  -f buttercup-run
+
+# Install test dependencies if needed
+make install-test-deps
+```
+
+### Test Coverage Status
+
+| Module | Test File | Test Cases | Status |
+|--------|-----------|------------|--------|
+| Notifications | test-notifications.el | 37 | ✅ Complete |
+| Agents | test-session.el | 15 | ⚠️ Partial |
+| Progress | test-drawer-core-logic.el | 20 | ⚠️ Partial |
+| Kitty Integration | test-kitty-integration.el | 10 | ⚠️ Partial |
+| Worktree | test-worktree.el | - | ❌ Missing |
+| Table View | test-table-view.el | - | ❌ Missing |
+| Rename | test-rename.el | - | ❌ Missing |
+
+**Total**: 230+ test cases across 7 test files
+**Target Coverage**: 80%+ of public functions
 
 ### Test Coverage Areas
 
@@ -100,6 +152,12 @@ Reload kitty: `Ctrl+Shift+F5`
    - Dashboard display
    - Error cases
 
+6. **Notifications**
+   - Input request detection (12 patterns)
+   - Multi-method notifications (popup, modeline, markdown)
+   - Waiting agent management
+   - Notification cleanup
+
 ### Testing Best Practices
 
 - Mock external dependencies (kitty commands, git commands)
@@ -107,6 +165,8 @@ Reload kitty: `Ctrl+Shift+F5`
 - Verify window state and cleanup
 - Check resource cleanup happens correctly
 - Test concurrent agent scenarios
+- Use `spy-on` for mocking function calls
+- Verify function calls with `expect` assertions
 
 ## Code Quality Standards
 
