@@ -3,7 +3,8 @@
 
 ;;; Commentary:
 ;; Comprehensive tests for notification system including input detection,
-;; notification triggers, popup/modeline/markdown notifications, and cleanup
+;; notification triggers, popup/modeline/markdown notifications, and cleanup.
+;; Testing hook execution.
 
 ;;; Code:
 
