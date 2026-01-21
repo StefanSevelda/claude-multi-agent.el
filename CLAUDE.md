@@ -105,6 +105,15 @@ buttercup -L . -L autoload -L test \
 make install-test-deps
 ```
 
+### Git Commit Policy
+
+**IMPORTANT**: Never use `git commit --no-verify` to bypass pre-commit hooks without explicit user permission.
+
+- Pre-commit hooks exist to ensure code quality and prevent broken commits
+- If tests fail in the pre-commit hook, fix the failing tests instead of bypassing them
+- Only use `--no-verify` when explicitly requested by the user
+- Document any known issues with pre-commit hooks and work to resolve them
+
 ### Test Coverage Status
 
 | Module | Test File | Test Cases | Status |
