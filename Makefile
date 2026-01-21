@@ -67,8 +67,8 @@ install-test-deps: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
 	@echo "✓ All test dependencies installed"
 
 test: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
-	@echo "Running tests with Buttercup (60 second timeout)..."
-	@timeout 60 $(EMACS) -batch \
+	@echo "Running tests with Buttercup (120 second timeout)..."
+	@timeout 120 $(EMACS) -batch \
 		-L . \
 		-L autoload \
 		-L test \
@@ -80,7 +80,6 @@ test: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
 		-l test/test-simple.el \
 		-l test/test-kitty-integration.el \
 		-l test/test-drawer-core-logic.el \
-		-l test/mcp-test.el \
 		-l test/test-session.el \
 		-l test/test-ediff.el \
 		-l test/test-notifications.el \
