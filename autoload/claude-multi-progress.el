@@ -75,6 +75,34 @@
         (insert (format "* Agents\n\n"))))))
 
 ;;;###autoload
+(defun claude-multi--make-properties-editable ()
+  "Make org property drawers editable in read-only progress buffer.
+Specifically makes AGENT_NAME property editable so users can rename agents."
+  (when (buffer-live-p claude-multi--progress-buffer)
+    (with-current-buffer claude-multi--progress-buffer
+      (let ((inhibit-read-only t))
+        (save-excursion
+          (goto-char (point-min))
+          (while (re-search-forward "^:PROPERTIES:$" nil t)
+            (let ((start (line-beginning-position)))
+              (when (re-search-forward "^:END:$" nil t)
+                (let ((end (line-end-position)))
+                  ;; Make the entire drawer editable by setting inhibit-read-only
+                  (put-text-property start end 'read-only nil)
+                  (put-text-property start end 'inhibit-read-only t)
+                  ;; Also make AGENT_NAME line specifically editable and visually distinct
+                  (save-excursion
+                    (goto-char start)
+                    (when (re-search-forward "^:AGENT_NAME: " end t)
+                      (let ((name-start (match-end 0))
+                            (name-end (line-end-position)))
+                        ;; Make the value part editable and highlighted
+                        (put-text-property name-start name-end 'read-only nil)
+                        (put-text-property name-start name-end 'inhibit-read-only t)
+                        (put-text-property name-start name-end 'face 'font-lock-variable-name-face)
+                        (put-text-property name-start name-end 'rear-nonsticky t)))))))))))))
+
+;;;###autoload
 (defun claude-multi--refresh-progress-from-status-files ()
   "Refresh progress buffer by reading all status files from /tmp/claude-status/."
   ;; Ensure helper functions are defined (workaround for loading issues)
@@ -123,7 +151,10 @@
                 (dolist (entry status-files)
                   (let* ((data (cdr entry))
                          (session-id (alist-get 'session_id data))
-                         (agent-name (alist-get 'agent_name data))
+                         ;; Agent name: ONLY from mapping file (ignores status.json agent_name)
+                         (mapped-name (when (fboundp 'claude-multi--read-rename-mapping)
+                                       (claude-multi--read-rename-mapping session-id)))
+                         ;; All other metadata: from status.json
                          (kitty-id (alist-get 'kitty_window_id data))
                          (cwd (alist-get 'cwd data))
                          (status (alist-get 'claude_status data))
@@ -132,18 +163,20 @@
                          (mode (alist-get 'claude_mode data))
                          (context (alist-get 'context_window data))
                          (git (alist-get 'git data))
-                         ;; Build descriptive name from directory and branch
+                         ;; Build descriptive name from directory and branch for auto-generated names
                          (dir-name (when cwd (file-name-nondirectory (directory-file-name cwd))))
                          (branch (when git (alist-get 'branch git)))
-                         (display-name (cond
-                                        ;; Use agent name if explicitly set
-                                        (agent-name agent-name)
-                                        ;; Use directory + branch if available
-                                        ((and dir-name branch) (format "%s (%s)" dir-name branch))
-                                        ;; Use directory only
-                                        (dir-name dir-name)
-                                        ;; Fallback to session ID
-                                        (t (format "Session %s" (substring session-id 0 8))))))
+                         (auto-name (cond
+                                     ;; Use directory + branch if available
+                                     ((and dir-name branch) (format "%s (%s)" dir-name branch))
+                                     ;; Use directory only
+                                     (dir-name dir-name)
+                                     ;; Fallback to session ID
+                                     (t (format "Session %s" (substring session-id 0 8)))))
+                         ;; Final display name: mapping file wins, fallback to auto-generated
+                         (display-name (or mapped-name auto-name))
+                         ;; For properties drawer: only store if explicitly mapped by user
+                         (agent-name mapped-name))
 
                     ;; Insert session header
                     (insert (format "** %s %s\n"
@@ -179,34 +212,6 @@
 
               ;; Make property drawers editable
               (claude-multi--make-properties-editable)))))))
-
-;;;###autoload
-(defun claude-multi--make-properties-editable ()
-  "Make org property drawers editable in read-only progress buffer.
-Specifically makes AGENT_NAME property editable so users can rename agents."
-  (when (buffer-live-p claude-multi--progress-buffer)
-    (with-current-buffer claude-multi--progress-buffer
-      (let ((inhibit-read-only t))
-        (save-excursion
-          (goto-char (point-min))
-          (while (re-search-forward "^:PROPERTIES:$" nil t)
-            (let ((start (line-beginning-position)))
-              (when (re-search-forward "^:END:$" nil t)
-                (let ((end (line-end-position)))
-                  ;; Make the entire drawer editable by setting inhibit-read-only
-                  (put-text-property start end 'read-only nil)
-                  (put-text-property start end 'inhibit-read-only t)
-                  ;; Also make AGENT_NAME line specifically editable and visually distinct
-                  (save-excursion
-                    (goto-char start)
-                    (when (re-search-forward "^:AGENT_NAME: " end t)
-                      (let ((name-start (match-end 0))
-                            (name-end (line-end-position)))
-                        ;; Make the value part editable and highlighted
-                        (put-text-property name-start name-end 'read-only nil)
-                        (put-text-property name-start name-end 'inhibit-read-only t)
-                        (put-text-property name-start name-end 'face 'font-lock-variable-name-face)
-                        (put-text-property name-start name-end 'rear-nonsticky t)))))))))))))
 
 ;;;###autoload
 (defun claude-multi--get-status-icon-from-string (status-str)
@@ -904,48 +909,145 @@ Returns plist with :session-id, :kitty-window, :agent-name, :directory, :display
 ;;;###autoload
 (defun claude-multi/focus-agent-at-point ()
   "Focus on the agent at point in the progress buffer.
-Reads the org-mode properties to determine which kitty window to focus."
+Works in both org view and table view."
   (interactive)
-  (let ((agent-info (claude-multi--get-agent-info-at-point)))
-    (if (not agent-info)
-        (message "No agent found at point. Place cursor on an agent headline.")
-      (let* ((window-id (plist-get agent-info :kitty-window))
-             (display-name (plist-get agent-info :display-name))
-             (listen-addr (or (and (boundp 'claude-multi-kitty-listen-address)
-                                  claude-multi-kitty-listen-address)
-                             (getenv "KITTY_LISTEN_ON")
-                             "unix:/tmp/kitty-claude")))
-        (if (not window-id)
-            (message "No kitty window ID found for %s. Agent may not have started running Claude commands yet (window ID is written to status.json after first Claude hook execution)."
-                    display-name)
-          (condition-case err
-              (progn
-                (call-process-shell-command
-                 (format "kitty @ --to=%s focus-window --match=id:%s"
-                        listen-addr window-id)
-                 nil 0)
-                (message "Focused on %s (window %s)" display-name window-id))
-            (error
-             (message "Failed to focus window %s: %s" window-id (error-message-string err)))))))))
+  (cond
+   ;; Table view mode
+   ((derived-mode-p 'claude-multi-table-mode)
+    (let ((session-id (tabulated-list-get-id)))
+      (if (not session-id)
+          (message "No agent at point")
+        (when (fboundp 'claude-multi-table/focus-agent)
+          (claude-multi-table/focus-agent)))))
+
+   ;; Org view mode
+   ((derived-mode-p 'org-mode)
+    (let ((agent-info (claude-multi--get-agent-info-at-point)))
+      (if (not agent-info)
+          (message "No agent found at point. Place cursor on an agent headline.")
+        (let* ((window-id (plist-get agent-info :kitty-window))
+               (display-name (plist-get agent-info :display-name))
+               (listen-addr (or (and (boundp 'claude-multi-kitty-listen-address)
+                                    claude-multi-kitty-listen-address)
+                               (getenv "KITTY_LISTEN_ON")
+                               "unix:/tmp/kitty-claude")))
+          (if (not window-id)
+              (message "No kitty window ID found for %s. Agent may not have started running Claude commands yet (window ID is written to status.json after first Claude hook execution)."
+                      display-name)
+            (condition-case err
+                (progn
+                  (call-process-shell-command
+                   (format "kitty @ --to=%s focus-window --match=id:%s"
+                          listen-addr window-id)
+                   nil 0)
+                  (message "Focused on %s (window %s)" display-name window-id))
+              (error
+               (message "Failed to focus window %s: %s" window-id (error-message-string err)))))))))
+
+   (t (message "Focus agent only works in org or table view"))))
 
 ;;;###autoload
 (defun claude-multi/kill-agent-at-point ()
   "Kill the agent at point in the progress buffer.
-Works entirely from status files - uses SESSION_ID property from org-mode.
-Closes kitty window and removes status file."
+Works in both org view and table view.
+Closes kitty window, removes status file, and cleans up mapping file.
+If agent doesn't exist, still cleans up all files."
   (interactive)
-  (let ((agent-info (claude-multi--get-agent-info-at-point)))
-    (if (not agent-info)
-        (message "No agent found at point. Place cursor on an agent headline.")
-      (let* ((session-id (plist-get agent-info :session-id))
-             (display-name (plist-get agent-info :display-name)))
+  (cond
+   ;; Table view mode
+   ((derived-mode-p 'claude-multi-table-mode)
+    (let ((session-id (tabulated-list-get-id)))
+      (if (not session-id)
+          (message "No agent at point")
+        (when (y-or-n-p (format "Really kill agent %s? " (substring session-id 0 8)))
+          (require 'claude-multi-status)
+          (claude-multi--kill-agent-by-session-id session-id)
+          (claude-multi-table/refresh)
+          (message "Cleaned up agent")))))
+
+   ;; Org view mode
+   ((derived-mode-p 'org-mode)
+    (save-excursion
+      (org-back-to-heading t)
+      (let* ((session-id (org-entry-get nil "SESSION_ID"))
+             (agent-info (claude-multi--get-agent-info-at-point))
+             (display-name (if agent-info
+                              (plist-get agent-info :display-name)
+                            (or (org-entry-get nil "AGENT_NAME")
+                                (format "Session %s" (substring session-id 0 8))))))
         (if (not session-id)
-            (message "No session ID found for %s. Cannot kill agent." display-name)
+            (message "No session ID found. Cannot kill agent.")
           (when (y-or-n-p (format "Really kill agent %s? " display-name))
             (require 'claude-multi-status)
-            (if (claude-multi--kill-agent-by-session-id session-id)
-                (message "Killed agent: %s" display-name)
-              (message "Failed to kill agent %s" display-name))))))))
+            ;; Always clean up files, even if agent doesn't exist
+            (claude-multi--delete-status-file session-id)
+            (when (fboundp 'claude-multi--delete-rename-mapping)
+              (claude-multi--delete-rename-mapping session-id))
+            ;; Try to close kitty window if it exists
+            (when-let ((kitty-id (org-entry-get nil "KITTY_WINDOW")))
+              (condition-case nil
+                  (let ((listen-addr (or (getenv "KITTY_LISTEN_ON")
+                                        "unix:/tmp/kitty-claude")))
+                    (call-process-shell-command
+                     (format "kitty @ --to=%s close-window --match=id:%s 2>/dev/null"
+                            listen-addr kitty-id)
+                     nil 0))
+                (error nil)))
+            ;; Refresh display
+            (when (fboundp 'claude-multi--refresh-progress-from-status-files)
+              (claude-multi--refresh-progress-from-status-files))
+            (message "Cleaned up agent: %s" display-name))))))
+
+   (t (message "Kill agent only works in org or table view"))))
+
+;;; View switching
+
+;;;###autoload
+(defun claude-multi/switch-to-table-view ()
+  "Switch progress buffer to table view."
+  (interactive)
+  (when (buffer-live-p claude-multi--progress-buffer)
+    (with-current-buffer claude-multi--progress-buffer
+      ;; Load table module first
+      (require 'claude-multi-table)
+      ;; Switch to table mode (this will set the keymap)
+      (claude-multi-table-mode)
+      ;; Set view mode
+      (setq-local claude-multi--view-mode 'table)
+      ;; Update evil keymaps if evil is active
+      (when (and (fboundp 'evil-normalize-keymaps)
+                 (fboundp 'evil-state))
+        (evil-normalize-keymaps))
+      ;; Populate and display
+      (claude-multi--populate-table-view)
+      (tabulated-list-init-header)
+      (tabulated-list-print)
+      (message "Switched to table view. Press 'f' to focus, 'o' to return to org view."))))
+
+;;;###autoload
+(defun claude-multi/switch-to-org-view ()
+  "Switch progress buffer to org-mode view."
+  (interactive)
+  (when (buffer-live-p claude-multi--progress-buffer)
+    (with-current-buffer claude-multi--progress-buffer
+      (let ((inhibit-read-only t))
+        ;; Switch to org mode
+        (org-mode)
+        ;; Set view mode
+        (setq-local claude-multi--view-mode 'org)
+        ;; Refresh from status files
+        (claude-multi--refresh-progress-from-status-files)
+        (message "Switched to org view. Press 't' to switch to table view.")))))
+
+;;;###autoload
+(defun claude-multi/toggle-view ()
+  "Toggle between table and org-mode views."
+  (interactive)
+  (when (buffer-live-p claude-multi--progress-buffer)
+    (with-current-buffer claude-multi--progress-buffer
+      (if (eq claude-multi--view-mode 'table)
+          (claude-multi/switch-to-org-view)
+        (claude-multi/switch-to-table-view)))))
 
 (provide 'claude-multi-progress)
 ;;; progress.el ends here
