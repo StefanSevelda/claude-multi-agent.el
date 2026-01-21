@@ -85,6 +85,7 @@ test: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
 		-l test/test-notifications.el \
 		-l test/test-worktree.el \
 		-l test/test-table-view.el \
+		-l test/test-rename.el \
 		-f buttercup-run \
 	|| (echo "Tests timed out or failed"; exit 1)
 
