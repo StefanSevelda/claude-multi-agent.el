@@ -83,6 +83,7 @@ test: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
 		-l test/mcp-test.el \
 		-l test/test-session.el \
 		-l test/test-ediff.el \
+		-l test/test-notifications.el \
 		-f buttercup-run \
 	|| (echo "Tests timed out or failed"; exit 1)
 
