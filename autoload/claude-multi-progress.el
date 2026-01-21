@@ -104,7 +104,22 @@ Specifically makes AGENT_NAME property editable so users can rename agents."
 
 ;;;###autoload
 (defun claude-multi--refresh-progress-from-status-files ()
-  "Refresh progress buffer by reading all status files from /tmp/claude-status/."
+  "Refresh progress buffer by reading all status files from /tmp/claude-status/.
+Dispatches to appropriate refresh based on current view mode (org or table)."
+  ;; Check current view mode and dispatch appropriately
+  (when (buffer-live-p claude-multi--progress-buffer)
+    (with-current-buffer claude-multi--progress-buffer
+      (if (eq claude-multi--view-mode 'table)
+          ;; Refresh table view
+          (when (and (fboundp 'claude-multi-table/refresh)
+                     (derived-mode-p 'claude-multi-table-mode))
+            (claude-multi-table/refresh))
+        ;; Refresh org view (default)
+        (claude-multi--refresh-org-view-from-status-files)))))
+
+;;;###autoload
+(defun claude-multi--refresh-org-view-from-status-files ()
+  "Refresh org-mode view by reading all status files from /tmp/claude-status/."
   ;; Ensure helper functions are defined (workaround for loading issues)
   (unless (fboundp 'claude-multi--get-status-icon-from-string)
     (eval '(defun claude-multi--get-status-icon-from-string (status-str)
