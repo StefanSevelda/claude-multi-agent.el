@@ -413,6 +413,149 @@ Add to `config.el`:
 
 ---
 
+## 4. Filter Out Sub-Agents from Progress View
+
+### Problem
+
+When agents spawn sub-agents using the Task tool, these sub-agents create their own status files in `/tmp/claude-status/`. This causes them to appear in the Emacs progress buffer alongside the main agents, creating clutter and confusion.
+
+**Impact**: Medium - Makes the progress view cluttered and harder to navigate
+**Frequency**: Happens whenever agents use Task tool to spawn sub-agents
+
+### Root Cause
+
+The progress buffer refresh logic in `autoload/claude-multi-progress.el` reads ALL status files from `/tmp/claude-status/` without distinguishing between:
+1. **Parent agents** - Launched directly by the user via `claude-multi/spawn-agent`
+2. **Sub-agents** - Spawned by other agents using the Task tool
+
+Currently, `claude-multi--read-all-status-files` simply iterates over all `status-*.json` files without filtering.
+
+### Solution
+
+Add a mechanism to identify and filter out sub-agents from the progress view:
+
+#### Option A: Track Parent Agents Only (Recommended)
+
+Maintain a list of parent agent session IDs and only display those:
+
+```elisp
+;; In autoload/claude-multi-agents.el
+(defvar claude-multi--parent-agent-ids nil
+  "List of session IDs for agents spawned directly by the user.
+Used to filter out sub-agents from the progress view.")
+
+(defun claude-multi--register-parent-agent (session-id)
+  "Register SESSION-ID as a parent agent."
+  (add-to-list 'claude-multi--parent-agent-ids session-id))
+
+;; In claude-multi--spawn-agent-internal:
+(when session-id
+  (claude-multi--register-parent-agent session-id))
+
+;; In autoload/claude-multi-progress.el
+(defun claude-multi--read-all-status-files ()
+  "Read all parent agent status files, excluding sub-agents."
+  (let ((status-dir (expand-file-name "/tmp/claude-status")))
+    (when (file-directory-p status-dir)
+      (delq nil
+            (mapcar
+             (lambda (file)
+               (when (string-match "status-\\(.*\\)\\.json" (file-name-nondirectory file))
+                 (let* ((session-id (match-string 1 (file-name-nondirectory file)))
+                        (status-data (claude-multi--read-status-file file)))
+                   ;; Only include if it's a parent agent
+                   (when (member session-id claude-multi--parent-agent-ids)
+                     status-data))))
+             (directory-files status-dir t "status-.*\\.json$"))))))
+```
+
+**Pros**: Simple, clean, works immediately
+**Cons**: Requires tracking session IDs, needs persistence across Emacs sessions
+
+#### Option B: Mark Sub-Agents in Status Files (Better Long-term)
+
+Add a `parent_session_id` field to the status file structure. Sub-agents would have this field set, parent agents would not:
+
+```python
+# In hooks/status-summary.py
+def generate_status_json(state, cwd, context_info=None, git_info=None, model_info=None):
+    """Generate the status data as JSON."""
+    # ... existing code ...
+
+    # Check if this is a sub-agent
+    parent_session_id = os.environ.get("PARENT_SESSION_ID")
+
+    status_data = {
+        # ... existing fields ...
+    }
+
+    # Only include parent_session_id if this is a sub-agent
+    if parent_session_id:
+        status_data["parent_session_id"] = parent_session_id
+
+    return json.dumps(status_data, indent=2)
+```
+
+Then filter in Emacs:
+
+```elisp
+(defun claude-multi--read-all-status-files ()
+  "Read all parent agent status files, excluding sub-agents."
+  (let ((status-dir (expand-file-name "/tmp/claude-status")))
+    (when (file-directory-p status-dir)
+      (delq nil
+            (mapcar
+             (lambda (file)
+               (let ((status-data (claude-multi--read-status-file file)))
+                 ;; Only include if parent_session_id is not present
+                 (unless (alist-get 'parent_session_id status-data)
+                   status-data)))
+             (directory-files status-dir t "status-.*\\.json$"))))))
+```
+
+**Pros**:
+- Self-documenting (status files indicate parent/sub relationship)
+- Works across Emacs restarts
+- Could enable future features (showing sub-agent tree)
+
+**Cons**:
+- Requires setting `PARENT_SESSION_ID` environment variable when spawning sub-agents
+- Not clear if we can control this in Claude Code's Task tool
+
+#### Option C: Add Configuration Toggle (Future Enhancement)
+
+Allow users to choose whether to show sub-agents:
+
+```elisp
+(defcustom claude-multi-show-subagents nil
+  "Whether to show sub-agents in the progress view.
+When nil, only parent agents spawned directly by the user are shown.
+When t, all agents including sub-agents are displayed."
+  :type 'boolean
+  :group 'claude-multi)
+```
+
+### Recommendation
+
+**Start with Option A** (track parent agents) for immediate implementation, then consider **Option B** (mark in status files) if we can influence how sub-agents are spawned.
+
+### Implementation Plan
+
+1. Add `claude-multi--parent-agent-ids` variable to `autoload/claude-multi-agents.el`
+2. Register parent agents when spawned in `claude-multi--spawn-agent-internal`
+3. Modify `claude-multi--read-all-status-files` to filter by parent IDs
+4. Test with agents that spawn sub-agents
+5. Verify sub-agents don't appear in progress buffer
+6. Consider persistence mechanism for session IDs across Emacs restarts
+
+### Additional Considerations
+
+- **Session Persistence**: If Emacs restarts, the `claude-multi--parent-agent-ids` list is lost. Consider storing this in a file (e.g., `/tmp/claude-status/parent-agents.txt`)
+- **Cleanup**: Remove session IDs from the list when parent agents complete
+- **Debugging**: Add a toggle command `claude-multi/toggle-show-subagents` for debugging
+
+---
+
 ## Implementation Priority
 
 ### Phase 1: Critical Fixes (This Week)
@@ -421,6 +564,7 @@ Add to `config.el`:
 
 ### Phase 2: Enhancements (Next Week)
 3. ⏳ **Add table view** - Nice to have, improves usability
+4. ⏳ **Filter out sub-agents** - Reduces clutter in progress view
 
 ---
 
@@ -451,6 +595,16 @@ Add to `config.el`:
 - [ ] Rename agent from table view
 - [ ] Switch back to org view
 - [ ] Verify data is same
+
+### Sub-Agent Filtering
+- [ ] Spawn a parent agent
+- [ ] Have that agent spawn a sub-agent using Task tool
+- [ ] Verify sub-agent does NOT appear in progress buffer
+- [ ] Verify parent agent still appears
+- [ ] Check that sub-agent status file exists in `/tmp/claude-status/`
+- [ ] Restart Emacs (if using persistence)
+- [ ] Verify filtering still works after restart
+- [ ] Test with multiple levels (agent → sub-agent → sub-sub-agent)
 
 ---
 

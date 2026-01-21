@@ -150,19 +150,28 @@ If a file approaches 800 lines:
 
 ### Parenthesis Validation
 
-**CRITICAL**: Before inserting new functions or editing existing ones, ALWAYS validate parenthesis balance:
+**CRITICAL**: Before editing existing functions, ALWAYS evaluate them first to overcome parenthesis problems:
 
 ```bash
-# Test the function loads without errors
+# BEFORE editing: Test that the function loads correctly
 ./emacs-eval.sh '(progn (load-file "path/to/file.el") (message "Loaded successfully"))'
+
+# AFTER editing: Validate the changes load without errors
+./emacs-eval.sh '(progn (load-file "path/to/file.el") (message "Changes validated"))'
 ```
 
-**Why**: Emacs Lisp is extremely sensitive to parenthesis imbalance. A single missing or extra paren will break the entire file. Always verify:
-1. Functions can be loaded without errors
-2. Parentheses are properly balanced
-3. No syntax errors before committing
+**Why**: Emacs Lisp is extremely sensitive to parenthesis imbalance. A single missing or extra paren will break the entire file. Always:
+1. **Test BEFORE editing**: Verify the function loads correctly in its current state
+2. **Test AFTER editing**: Verify your changes don't introduce syntax errors
+3. **Validate incrementally**: Test after each significant change, not just at the end
 
-This prevents breaking the codebase with syntax errors.
+**Best Practice**: When editing complex nested forms (like `cond`, nested `let`, or `if` statements):
+1. Eval the original function first to establish a working baseline
+2. Make your edits carefully, counting opening and closing parens
+3. Eval immediately after editing to catch errors early
+4. If you get paren errors, compare against the working original
+
+This prevents breaking the codebase with syntax errors and makes debugging much faster.
 
 ### Dependencies
 
