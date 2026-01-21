@@ -18,6 +18,12 @@
 
 (defvar claude-multi-kitty-listen-address)
 
+;;; Rename mapping directory
+
+(defvar claude-multi-rename-directory "/tmp/claude-multi-renames"
+  "Directory for persisting user-defined agent renames.
+Renames are stored separately from status files to survive status updates.")
+
 ;;; Property change detection
 
 (defvar claude-multi--rename-timer nil
@@ -30,27 +36,33 @@ Used to detect actual changes vs. buffer refreshes.")
 ;;;###autoload
 (defun claude-multi/rename-agent-at-point ()
   "Rename the agent at point in the progress buffer.
-Prompts for new name and updates status.json and kitty window title."
+Prompts for new name and updates status.json and kitty window title.
+Works in both org view (calls this function) and table view (delegates)."
   (interactive)
-  (let ((agent-info (claude-multi--get-agent-info-at-point)))
-    (if (not agent-info)
-        (message "No agent found at point. Place cursor on an agent headline.")
-      (let* ((session-id (plist-get agent-info :session-id))
-             (kitty-window (plist-get agent-info :kitty-window))
-             (current-name (or (plist-get agent-info :agent-name)
-                             (plist-get agent-info :display-name)))
-             (new-name (read-string (format "Rename '%s' to: " current-name) current-name)))
-        (if (string-empty-p new-name)
-            (message "Agent name cannot be empty")
-          ;; Update status file
-          (claude-multi--update-status-agent-name session-id new-name)
-          ;; Update kitty window title
-          (when kitty-window
-            (claude-multi--update-kitty-window-title kitty-window new-name session-id))
-          ;; Refresh progress buffer to show new name
-          (when (fboundp 'claude-multi--refresh-progress-from-status-files)
-            (claude-multi--refresh-progress-from-status-files))
-          (message "Agent renamed to: %s" new-name))))))
+  ;; Delegate to table view if in table mode
+  (if (derived-mode-p 'claude-multi-table-mode)
+      (when (fboundp 'claude-multi-table/rename-agent)
+        (claude-multi-table/rename-agent))
+    ;; Otherwise handle org mode
+    (let ((agent-info (claude-multi--get-agent-info-at-point)))
+      (if (not agent-info)
+          (message "No agent found at point. Place cursor on an agent headline.")
+        (let* ((session-id (plist-get agent-info :session-id))
+               (kitty-window (plist-get agent-info :kitty-window))
+               (current-name (or (plist-get agent-info :agent-name)
+                               (plist-get agent-info :display-name)))
+               (new-name (read-string (format "Rename '%s' to: " current-name) current-name)))
+          (if (string-empty-p new-name)
+              (message "Agent name cannot be empty")
+            ;; Update status file
+            (claude-multi--update-status-agent-name session-id new-name)
+            ;; Update kitty window title
+            (when kitty-window
+              (claude-multi--update-kitty-window-title kitty-window new-name session-id))
+            ;; Refresh progress buffer to show new name
+            (when (fboundp 'claude-multi--refresh-progress-from-status-files)
+              (claude-multi--refresh-progress-from-status-files))
+            (message "Agent renamed to: %s" new-name)))))))
 
 ;;;###autoload
 (defun claude-multi--setup-rename-hooks ()
@@ -102,11 +114,52 @@ BEG, END, and LEN are standard after-change-functions parameters."
         ;; Remember this name
         (puthash session-id new-name claude-multi--last-seen-names)))))
 
+;;; Rename mapping file functions
+
+;;;###autoload
+(defun claude-multi--rename-mapping-file (session-id)
+  "Return path to rename mapping file for SESSION-ID."
+  (expand-file-name session-id claude-multi-rename-directory))
+
+;;;###autoload
+(defun claude-multi--write-rename-mapping (session-id new-name)
+  "Write NEW-NAME to rename mapping file for SESSION-ID."
+  (let ((mapping-file (claude-multi--rename-mapping-file session-id)))
+    ;; Ensure directory exists
+    (unless (file-exists-p claude-multi-rename-directory)
+      (make-directory claude-multi-rename-directory t))
+    ;; Write rename to file
+    (with-temp-file mapping-file
+      (insert new-name))
+    (message "Wrote rename mapping: %s -> %s" session-id new-name)))
+
+;;;###autoload
+(defun claude-multi--read-rename-mapping (session-id)
+  "Read rename from mapping file for SESSION-ID.
+Returns the renamed name or nil if no mapping exists."
+  (let ((mapping-file (claude-multi--rename-mapping-file session-id)))
+    (when (file-exists-p mapping-file)
+      (condition-case nil
+          (with-temp-buffer
+            (insert-file-contents mapping-file)
+            (string-trim (buffer-string)))
+        (error nil)))))
+
+;;;###autoload
+(defun claude-multi--delete-rename-mapping (session-id)
+  "Delete rename mapping file for SESSION-ID."
+  (let ((mapping-file (claude-multi--rename-mapping-file session-id)))
+    (when (file-exists-p mapping-file)
+      (delete-file mapping-file)
+      (message "Deleted rename mapping for: %s" session-id))))
+
 ;;; Status file updates
 
 ;;;###autoload
 (defun claude-multi--update-status-agent-name (session-id new-name)
-  "Update agent_name in status.json for SESSION-ID to NEW-NAME."
+  "Persist agent rename to mapping file for SESSION-ID with NEW-NAME.
+Also updates status.json for reference, but mapping file is the authoritative source.
+Display code reads ONLY from mapping file, ignoring status.json agent_name."
   (require 'claude-multi-status)
   (when-let* ((status-file (claude-multi--status-file-path session-id))
               ((file-exists-p status-file)))
@@ -124,6 +177,8 @@ BEG, END, and LEN are standard after-change-functions parameters."
           ;; Write back to file
           (with-temp-file status-file
             (insert (json-encode data)))
+          ;; Also write to mapping file for persistence
+          (claude-multi--write-rename-mapping session-id new-name)
           (message "Updated agent name to: %s" new-name))
       (error
        (message "Failed to update status file for %s: %s"

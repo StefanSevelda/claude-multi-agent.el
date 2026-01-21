@@ -358,6 +358,11 @@ Uses WebSocket if available, falls back to polling if configured."
   ;; Update progress buffer
   (claude-multi--update-agent-status agent)
 
+  ;; Clean up rename mapping file
+  (when-let ((session-id (claude-agent-session-id agent)))
+    (when (fboundp 'claude-multi--delete-rename-mapping)
+      (claude-multi--delete-rename-mapping session-id)))
+
   ;; Handle buffer cleanup
   (claude-multi--handle-buffer-cleanup agent))
 
@@ -394,10 +399,13 @@ Uses WebSocket if available, falls back to polling if configured."
     (when-let ((timer (claude-agent-status-timer agent)))
       (cancel-timer timer))
 
-    ;; Delete status file if agent has a session ID
+    ;; Delete status file and rename mapping if agent has a session ID
     (when-let ((session-id (claude-agent-session-id agent)))
       (require 'claude-multi-status)
-      (claude-multi--delete-status-file session-id))
+      (claude-multi--delete-status-file session-id)
+      ;; Clean up rename mapping file
+      (when (fboundp 'claude-multi--delete-rename-mapping)
+        (claude-multi--delete-rename-mapping session-id)))
 
     ;; Close kitty window
     (let* ((window-id (claude-agent-kitty-window-id agent))

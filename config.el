@@ -596,12 +596,16 @@ Org Properties (editable):
 ;; Add keybindings for progress mode
 (define-key claude-multi-progress-mode-map (kbd "f") 'claude-multi/focus-agent-at-point)
 (define-key claude-multi-progress-mode-map (kbd "r") 'claude-multi/rename-agent-at-point)
+(define-key claude-multi-progress-mode-map (kbd "t") 'claude-multi/switch-to-table-view)
+(define-key claude-multi-progress-mode-map (kbd "o") 'claude-multi/switch-to-org-view)
 
 ;; Evil mode keybindings for progress mode
 (with-eval-after-load 'evil
   (evil-define-key 'normal claude-multi-progress-mode-map
     (kbd "f") 'claude-multi/focus-agent-at-point
-    (kbd "r") 'claude-multi/rename-agent-at-point))
+    (kbd "r") 'claude-multi/rename-agent-at-point
+    (kbd "t") 'claude-multi/switch-to-table-view
+    (kbd "o") 'claude-multi/switch-to-org-view))
 
 ;; Note: claude-multi/kill-agent-at-point available via M-x but no default keybinding
 ;; to avoid conflicts with evil mode
