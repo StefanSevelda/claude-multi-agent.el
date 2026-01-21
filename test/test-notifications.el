@@ -219,6 +219,8 @@
       (let ((agent1 (make-claude-agent :id "test-1" :status 'waiting-input)))
         (setq claude-multi--waiting-agents (list agent1))
         (spy-on 'display-buffer)
+        ;; Mock the missing function
+        (spy-on 'claude-multi--get-status-icon :and-return-value "🟡")
         (claude-multi/show-waiting-agents)
         (expect 'display-buffer :to-have-been-called)
         (let ((buf (get-buffer "*Claude Waiting Agents.org*")))

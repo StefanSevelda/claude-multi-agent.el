@@ -193,8 +193,6 @@ This is a convenience wrapper around claude-multi/send-input."
                            (claude-multi--get-status-icon (claude-agent-status agent))
                            (claude-agent-name agent)))
             (insert (format "- Status :: %s\n" (upcase (symbol-name (claude-agent-status agent)))))
-            (insert (format "- Last output :: %s\n"
-                           (or (claude-agent-last-output agent) "N/A")))
             (insert (format "- Waiting since :: %s\n\n"
                            (format-time-string "[%Y-%m-%d %a %H:%M:%S]"
                                              (claude-agent-created-at agent)))))
