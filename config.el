@@ -149,8 +149,8 @@ Server will try to bind to an available port in this range."
   :type '(repeat color)
   :group 'claude-multi)
 
-(defcustom claude-multi-progress-buffer-name "*Claude Multi-Agent Progress.org*"
-  "Name of the central progress tracking buffer (org-mode)."
+(defcustom claude-multi-progress-buffer-name "*Claude Multi-Agent Progress*"
+  "Name of the central progress tracking buffer (table view)."
   :type 'string
   :group 'claude-multi)
 
@@ -359,6 +359,9 @@ Agent will cd into the worktree directory before launching Claude."
         (get-buffer-create claude-multi-progress-buffer-name))
   (with-current-buffer claude-multi--progress-buffer
     (claude-multi-progress-mode)
+    ;; Load table module and initialize
+    (require 'claude-multi-table)
+    (claude-multi-table-mode)
     (unless (get-buffer-window claude-multi--progress-buffer)
       (display-buffer claude-multi--progress-buffer)))
   (claude-multi--init-progress-buffer)
@@ -573,39 +576,27 @@ Works with both in-memory agents and persistent sessions from status files."
 (defvar auto-revert-interval)  ; Defined in autorevert.el
 (declare-function org-indent-mode "org-indent")  ; Defined in org-indent.el
 
-(define-derived-mode claude-multi-progress-mode org-mode "Claude-Multi-Progress"
-  "Major mode for Claude Multi-Agent progress tracking in org-mode format.
+(define-derived-mode claude-multi-progress-mode tabulated-list-mode "Claude-Multi-Progress"
+  "Major mode for Claude Multi-Agent progress tracking in table format.
 
 Keybindings:
   \\[claude-multi/focus-agent-at-point] - Focus on agent at point
-
-Org Properties (editable):
-  Edit :AGENT_NAME: property in drawer to rename agents.
-  Changes auto-sync to status.json and kitty window title."
+  \\[claude-multi/rename-agent-at-point] - Rename agent at point"
   (setq-local auto-revert-interval 0.5)
   (auto-revert-mode 1)
-  (read-only-mode 1)
-  ;; Enable org-mode features
-  (when (fboundp 'org-indent-mode)
-    (org-indent-mode 1))
-  (visual-line-mode 1)
-  ;; Setup rename hooks for property-based renaming
-  (require 'claude-multi-rename)
-  (claude-multi--setup-rename-hooks))
+  ;; Don't need read-only mode - tabulated-list handles this
+  ;; Don't setup rename hooks - table mode handles renaming differently
+  )
 
 ;; Add keybindings for progress mode
 (define-key claude-multi-progress-mode-map (kbd "f") 'claude-multi/focus-agent-at-point)
 (define-key claude-multi-progress-mode-map (kbd "r") 'claude-multi/rename-agent-at-point)
-(define-key claude-multi-progress-mode-map (kbd "t") 'claude-multi/switch-to-table-view)
-(define-key claude-multi-progress-mode-map (kbd "o") 'claude-multi/switch-to-org-view)
 
 ;; Evil mode keybindings for progress mode
 (with-eval-after-load 'evil
   (evil-define-key 'normal claude-multi-progress-mode-map
     (kbd "f") 'claude-multi/focus-agent-at-point
-    (kbd "r") 'claude-multi/rename-agent-at-point
-    (kbd "t") 'claude-multi/switch-to-table-view
-    (kbd "o") 'claude-multi/switch-to-org-view))
+    (kbd "r") 'claude-multi/rename-agent-at-point))
 
 ;; Note: claude-multi/kill-agent-at-point available via M-x but no default keybinding
 ;; to avoid conflicts with evil mode

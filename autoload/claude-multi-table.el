@@ -14,13 +14,10 @@
 (declare-function claude-multi--get-status-icon-from-string "claude-multi-progress")
 (declare-function claude-multi/focus-agent-at-point "claude-multi-progress")
 (declare-function claude-multi/kill-agent-at-point "claude-multi-progress")
-(declare-function claude-multi/switch-to-org-view "claude-multi-progress")
 (declare-function claude-multi--status-file-path "claude-multi-status")
 (declare-function claude-multi--kill-agent-by-session-id "claude-multi-status")
 
 (defvar claude-multi--progress-buffer)
-(defvar claude-multi--view-mode 'org
-  "Current view mode for progress buffer: \='org or \='table.")
 
 ;;; Table view mode
 
@@ -29,7 +26,6 @@
     (define-key map (kbd "RET") #'claude-multi-table/focus-agent)
     (define-key map (kbd "f") #'claude-multi-table/focus-agent)
     (define-key map (kbd "r") #'claude-multi-table/rename-agent)
-    (define-key map (kbd "o") #'claude-multi/switch-to-org-view)
     (define-key map (kbd "g") #'claude-multi-table/refresh)
     map)
   "Keymap for `claude-multi-table-mode'.")
@@ -40,7 +36,6 @@
 Keybindings:
   \\[claude-multi-table/focus-agent] - Focus on agent at point (f, RET)
   \\[claude-multi-table/rename-agent] - Rename agent at point (r)
-  \\[claude-multi/switch-to-org-view] - Switch to org-mode view (o)
   \\[claude-multi-table/refresh] - Refresh table (g)
 
 Note: Use M-x claude-multi-table/kill-agent to kill an agent."
@@ -67,13 +62,13 @@ Note: Use M-x claude-multi-table/kill-agent to kill an agent."
       (kbd "f") #'claude-multi-table/focus-agent
       (kbd "RET") #'claude-multi-table/focus-agent
       (kbd "r") #'claude-multi-table/rename-agent
-      (kbd "o") #'claude-multi/switch-to-org-view
       (kbd "g") #'claude-multi-table/refresh)
     ;; Update evil's keymap cache
     (evil-normalize-keymaps)))
 
 ;;; Table population
 
+;;;###autoload
 (defun claude-multi--populate-table-view ()
   "Populate the table view with agent data from status files."
   (when (fboundp 'claude-multi--get-all-status-files)

@@ -289,9 +289,8 @@
     (it "does nothing when no session exists"
       (let ((agent (test-ediff--make-agent)))
         (setf (claude-agent-ediff-session agent) nil)
-        (expect (lambda ()
-                  (claude-multi-ediff--set-mcp-request-id agent "req-789"))
-                :not :to-throw)))))
+        ;; Should not throw when no ediff session exists
+        (expect (claude-multi-ediff--set-mcp-request-id agent "req-789") :not :to-throw)))))
 
 (describe "Interactive Commands"
 

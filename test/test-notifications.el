@@ -146,8 +146,8 @@
 
     (it "handles clearing agent not in waiting list gracefully"
       (let ((agent (make-claude-agent :id "test-1" :task-description "Test task")))
-        (expect (lambda () (claude-multi--clear-notifications agent))
-                :not :to-throw))))
+        ;; Should not throw when agent is not in waiting list
+        (expect (claude-multi--clear-notifications agent) :not :to-throw))))
 
   ;;; Popup Notification Tests
   (describe "claude-multi--notify-popup"

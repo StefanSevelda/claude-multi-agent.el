@@ -96,8 +96,8 @@
 
     (it "handles deletion of non-existent mapping gracefully"
       (let ((session-id "nonexistent-session"))
-        (expect (lambda () (claude-multi--delete-rename-mapping session-id))
-                :not :to-throw)))))
+        ;; Should not throw an error when file doesn't exist
+        (expect (claude-multi--delete-rename-mapping session-id) :not :to-throw)))))
 
 ;;; Kitty Window Title Tests
 
@@ -176,8 +176,8 @@
 
     (it "handles missing status file gracefully"
       (let ((session-id "nonexistent-session"))
-        (expect (lambda () (claude-multi--update-status-agent-name session-id "New Name"))
-                :not :to-throw)))))
+        ;; Should not throw an error when status file doesn't exist
+        (expect (claude-multi--update-status-agent-name session-id "New Name") :not :to-throw)))))
 
 (provide 'test-rename)
 ;;; test-rename.el ends here
