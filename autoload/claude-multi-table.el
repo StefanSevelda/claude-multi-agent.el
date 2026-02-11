@@ -33,15 +33,19 @@
 (define-derived-mode claude-multi-table-mode tabulated-list-mode "Claude-Multi-Table"
   "Major mode for viewing Claude agents in a table format.
 
+Table is grouped by Window ID (kitty_window_id) - agents spawned
+in the same session appear together.
+
 Keybindings:
   \\[claude-multi-table/focus-agent] - Focus on agent at point (f, RET)
   \\[claude-multi-table/rename-agent] - Rename agent at point (r)
   \\[claude-multi-table/refresh] - Refresh table (g)
 
-Note: Use M-x claude-multi-table/kill-agent to kill an agent."
+Note: Killing an agent kills all agents in the same session window."
 
   (setq tabulated-list-format
         [("Icon"     6 nil :right-align nil)
+         ("Window"   8 t :right-align nil)
          ("Name"     25 t :right-align nil)
          ("Location" 30 t :right-align nil)
          ("Status"   10 t :right-align nil)
@@ -50,7 +54,7 @@ Note: Use M-x claude-multi-table/kill-agent to kill an agent."
          ("Tokens"   8 nil :right-align t)])
 
   (setq tabulated-list-padding 2)
-  (setq tabulated-list-sort-key (cons "Status" nil))
+  (setq tabulated-list-sort-key (cons "Window" nil))
   (add-hook 'tabulated-list-revert-hook 'claude-multi--populate-table-view nil t)
   (tabulated-list-init-header)
   (setq buffer-read-only t)
@@ -70,14 +74,40 @@ Note: Use M-x claude-multi-table/kill-agent to kill an agent."
 
 ;;;###autoload
 (defun claude-multi--populate-table-view ()
-  "Populate the table view with agent data from status files."
+  "Populate the table view with agent data from status files.
+Sorts by window ID (grouping agents in same session) then by timestamp
+(oldest first, so parent agents appear before their sub-agents)."
   (when (fboundp 'claude-multi--get-all-status-files)
-    (let ((status-files (claude-multi--get-all-status-files)))
-      (setq tabulated-list-entries
-            (mapcar #'claude-multi--agent-to-table-entry status-files)))))
+    (let* ((status-files (claude-multi--get-all-status-files))
+           ;; Sort status files: first by window ID, then by session_started timestamp
+           (sorted-files
+            (sort status-files
+                  (lambda (a b)
+                    (let* ((data-a (cdr a))
+                           (data-b (cdr b))
+                           (win-a (or (alist-get 'kitty_window_id data-a) ""))
+                           (win-b (or (alist-get 'kitty_window_id data-b) ""))
+                           (time-a (or (alist-get 'session_started data-a) ""))
+                           (time-b (or (alist-get 'session_started data-b) "")))
+                      (if (string= win-a win-b)
+                          ;; Same window: sort by timestamp (oldest first)
+                          (string< time-a time-b)
+                        ;; Different windows: sort by window ID
+                        (string< win-a win-b))))))
+           ;; Track window IDs to add indentation for child agents
+           (prev-window nil)
+           (entries nil))
+      (dolist (file-data sorted-files)
+        (let* ((data (cdr file-data))
+               (window-id (alist-get 'kitty_window_id data))
+               (is-child (and prev-window (string= window-id prev-window))))
+          (push (claude-multi--agent-to-table-entry file-data is-child) entries)
+          (setq prev-window window-id)))
+      (setq tabulated-list-entries (nreverse entries)))))
 
-(defun claude-multi--agent-to-table-entry (file-data)
-  "Convert status FILE-DATA (FILE . STATUS-DATA) to table entry format."
+(defun claude-multi--agent-to-table-entry (file-data &optional is-child)
+  "Convert status FILE-DATA (FILE . STATUS-DATA) to table entry format.
+If IS-CHILD is non-nil, adds indentation prefix to show hierarchy."
   (let* ((data (cdr file-data))
          (session-id (alist-get 'session_id data))
          ;; Agent name: ONLY from mapping file (ignores status.json agent_name)
@@ -102,12 +132,17 @@ Note: Use M-x claude-multi-table/kill-agent to kill an agent."
                     (cwd cwd)
                     (t "unknown")))
          ;; Final display name: mapping file wins, fallback to location
-         (display-name (or mapped-name location))
+         (base-display-name (or mapped-name location))
+         ;; Add indentation prefix for child agents
+         (display-name (if is-child
+                          (concat "|-> " base-display-name)
+                        base-display-name))
          (duration (claude-multi--calculate-duration started))
          (model-str (if model (upcase model) "")))
 
     (list session-id
           (vector icon
+                  (or (alist-get 'kitty_window_id data) "—")
                   display-name
                   location
                   (upcase (or status "unknown"))
@@ -177,18 +212,43 @@ Returns formatted string like '12m 34s' or '2h 15m'."
 
 ;;;###autoload
 (defun claude-multi-table/kill-agent ()
-  "Kill the agent at point in the table view."
+  "Kill the agent at point and all agents in the same session window.
+Prompts for confirmation, showing how many agents will be affected."
   (interactive)
   (let ((session-id (tabulated-list-get-id)))
     (if (not session-id)
         (message "No agent at point")
-      (when (y-or-n-p (format "Really kill agent %s? " session-id))
-        (require 'claude-multi-status)
-        (if (claude-multi--kill-agent-by-session-id session-id)
-            (progn
-              (message "Killed agent: %s" session-id)
-              (claude-multi-table/refresh))
-          (message "Failed to kill agent %s" session-id))))))
+      ;; Get the kitty_window_id for this agent
+      (let* ((status-files (claude-multi--get-all-status-files))
+             (agent-entry (cl-find-if
+                           (lambda (entry)
+                             (equal session-id (alist-get 'session_id (cdr entry))))
+                           status-files))
+             (window-id (alist-get 'kitty_window_id (cdr agent-entry)))
+             ;; Find all agents with same window ID
+             (session-agents (cl-remove-if-not
+                              (lambda (entry)
+                                (equal window-id
+                                       (alist-get 'kitty_window_id (cdr entry))))
+                              status-files))
+             (agent-count (length session-agents)))
+        (if (not window-id)
+            (message "Cannot determine session window for agent")
+          ;; Prompt with count
+          (when (y-or-n-p (format "Kill %d agent%s in window %s? "
+                                  agent-count
+                                  (if (> agent-count 1) "s" "")
+                                  window-id))
+            (require 'claude-multi-status)
+            ;; Kill all agents in session
+            (dolist (entry session-agents)
+              (let ((sid (alist-get 'session_id (cdr entry))))
+                (claude-multi--kill-agent-by-session-id sid)))
+            (claude-multi-table/refresh)
+            (message "Killed %d agent%s from window %s"
+                     agent-count
+                     (if (> agent-count 1) "s" "")
+                     window-id)))))))
 
 ;;;###autoload
 (defun claude-multi-table/rename-agent ()

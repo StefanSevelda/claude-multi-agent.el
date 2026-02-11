@@ -29,25 +29,28 @@
     (it "defines expected columns"
       (with-temp-buffer
         (claude-multi-table-mode)
-        (expect (length tabulated-list-format) :to-equal 7)
+        (expect (length tabulated-list-format) :to-equal 8)
         ;; Verify column names - tabulated-list-format is a vector of vectors
         (expect (elt (elt tabulated-list-format 0) 0) :to-equal "Icon")
-        (expect (elt (elt tabulated-list-format 1) 0) :to-equal "Name")
-        (expect (elt (elt tabulated-list-format 2) 0) :to-equal "Location")
-        (expect (elt (elt tabulated-list-format 3) 0) :to-equal "Status")
-        (expect (elt (elt tabulated-list-format 4) 0) :to-equal "Model")
-        (expect (elt (elt tabulated-list-format 5) 0) :to-equal "Time")
-        (expect (elt (elt tabulated-list-format 6) 0) :to-equal "Tokens")))
+        (expect (elt (elt tabulated-list-format 1) 0) :to-equal "Window")
+        (expect (elt (elt tabulated-list-format 2) 0) :to-equal "Name")
+        (expect (elt (elt tabulated-list-format 3) 0) :to-equal "Location")
+        (expect (elt (elt tabulated-list-format 4) 0) :to-equal "Status")
+        (expect (elt (elt tabulated-list-format 5) 0) :to-equal "Model")
+        (expect (elt (elt tabulated-list-format 6) 0) :to-equal "Time")
+        (expect (elt (elt tabulated-list-format 7) 0) :to-equal "Tokens")))
 
     (it "enables sorting on sortable columns"
       (with-temp-buffer
         (claude-multi-table-mode)
-        ;; Name column should be sortable (index 1)
+        ;; Window column should be sortable (index 1)
         (expect (elt (elt tabulated-list-format 1) 2) :to-be-truthy)
-        ;; Location column should be sortable (index 2)
+        ;; Name column should be sortable (index 2)
         (expect (elt (elt tabulated-list-format 2) 2) :to-be-truthy)
-        ;; Status column should be sortable (index 3)
-        (expect (elt (elt tabulated-list-format 3) 2) :to-be-truthy)))))
+        ;; Location column should be sortable (index 3)
+        (expect (elt (elt tabulated-list-format 3) 2) :to-be-truthy)
+        ;; Status column should be sortable (index 4)
+        (expect (elt (elt tabulated-list-format 4) 2) :to-be-truthy)))))
 
 ;;; Duration Calculation Tests
 
