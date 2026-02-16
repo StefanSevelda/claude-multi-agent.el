@@ -233,7 +233,13 @@ Prompts for confirmation, showing how many agents will be affected."
                               status-files))
              (agent-count (length session-agents)))
         (if (not window-id)
-            (message "Cannot determine session window for agent")
+            ;; No window ID — kitty window gone or never recorded.
+            ;; Still clean up the status file for this single agent.
+            (when (y-or-n-p (format "Kill agent %s (no kitty window)? " session-id))
+              (require 'claude-multi-status)
+              (claude-multi--kill-agent-by-session-id session-id)
+              (claude-multi-table/refresh)
+              (message "Cleaned up agent %s" session-id))
           ;; Prompt with count
           (when (y-or-n-p (format "Kill %d agent%s in window %s? "
                                   agent-count
