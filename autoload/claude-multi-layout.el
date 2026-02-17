@@ -31,13 +31,24 @@
 ;; ──────────────────────────────────────────────────────────────────────────────
 
 (defun claude-multi-layout--ensure-progress-visible ()
-  "Ensure the progress buffer is displayed in its side-window.
-Creates the buffer if it doesn't exist."
+  "Ensure the progress buffer is displayed in a bottom side-window.
+Creates the buffer if it doesn't exist.  Any existing non-side window
+showing the buffer is replaced by a dedicated side-window so the
+progress table stays pinned at the bottom across layout switches."
   (let ((buf (get-buffer-create
               (or (bound-and-true-p claude-multi-progress-buffer-name)
                   "*Claude Multi-Agent Progress*"))))
+    ;; Kill any non-side window showing the buffer first
+    (when-let ((existing (get-buffer-window buf t)))
+      (unless (window-parameter existing 'window-side)
+        (delete-window existing)))
+    ;; Always display via side-window to guarantee bottom pinning
     (unless (get-buffer-window buf t)
-      (display-buffer buf))))
+      (display-buffer-in-side-window buf
+        '((side . bottom) (slot . 0)
+          (window-height . 0.25)
+          (preserve-size . (nil . t))
+          (dedicated . t))))))
 
 (defun claude-multi-layout--find-org-file (filename)
   "Open FILENAME from the org planning directory, returning the buffer.
