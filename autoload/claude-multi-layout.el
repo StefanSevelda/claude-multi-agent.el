@@ -178,9 +178,9 @@ Shells out to `cma layout init'.  Idempotent — the Go code returns
 early when the layout is already active.  Logs a warning if the `cma'
 binary is not found."
   (if (and (fboundp 'cma--available-p) (cma--available-p))
-      (let ((result (cma--call "layout" "init" "--json")))
-        (unless result
-          (message "Morning: cma layout init returned nil (already initialised or error)")))
+      (let ((output (cma--call-raw "layout" "init")))
+        (when output
+          (message "Morning: %s" (car (last (split-string output "\n" t))))))
     (message "Morning: cma binary not found — skipping Kitty layout")))
 
 ;;;###autoload
