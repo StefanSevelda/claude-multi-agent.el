@@ -11,6 +11,7 @@
 ;;   - triage-all:  same as triage (entry point for full triage flow)
 ;;   - task-triage:  task-triage.org (full width)
 ;;   - planning:    week-YYYY-Www.org (full width)
+;;   - morning:     week file (60%) | jira/email/task triage (stacked right)
 ;;   - coding:      restore normal window configuration
 
 ;;; Code:
@@ -50,6 +51,30 @@ Reverts the buffer if it was already visiting the file."
           buf)
       (message "Layout: file not found: %s" path)
       nil)))
+
+(defun claude-multi-layout--find-or-create-org-file (filename)
+  "Open FILENAME from the org planning directory, creating a placeholder if missing.
+Returns the buffer.  When the file doesn't exist yet (e.g. triage files
+that will be exported by the agent), a temporary buffer is created with a
+waiting message.  Use `claude-multi-layout/revert-files' to refresh once
+the agent has written the real file."
+  (let ((path (expand-file-name filename claude-multi-layout--org-base-dir)))
+    (if (file-exists-p path)
+        (let ((buf (find-file-noselect path)))
+          (with-current-buffer buf
+            (when (file-exists-p buffer-file-name)
+              (revert-buffer t t t)))
+          buf)
+      ;; Create a placeholder buffer visiting the path
+      (let ((buf (find-file-noselect path)))
+        (with-current-buffer buf
+          (unless (buffer-modified-p)
+            (erase-buffer)
+            (insert (format "#+TITLE: %s\n\n" (file-name-sans-extension filename)))
+            (insert "Waiting for triage export...\n\n")
+            (insert "Run =SPC c l r= to refresh once the agent populates this file.\n")
+            (set-buffer-modified-p nil)))
+        buf))))
 
 (defun claude-multi-layout--current-week-file ()
   "Return the filename for the current week's planning file.
@@ -136,6 +161,72 @@ Progress buffer pinned at bottom."
       (setq claude-multi-layout--current 'planning)
       (message "Layout: planning (%s)" week-file))))
 
+(defun claude-multi-layout--ensure-kitty-layout ()
+  "Ensure the Kitty OS window layout (Emacs + Agents) is initialised.
+Shells out to `cma layout init'.  Idempotent — the Go code returns
+early when the layout is already active.  Logs a warning if the `cma'
+binary is not found."
+  (if (and (fboundp 'cma--available-p) (cma--available-p))
+      (let ((result (cma--call "layout" "init" "--json")))
+        (unless result
+          (message "Morning: cma layout init returned nil (already initialised or error)")))
+    (message "Morning: cma binary not found — skipping Kitty layout")))
+
+;;;###autoload
+(defun claude-multi-layout/morning ()
+  "Activate morning layout: weekly plan (left 60%) with triage stack (right).
+Right column shows jira-triage, email-triage, and task-triage stacked.
+Progress buffer pinned at bottom."
+  (interactive)
+  (unless claude-multi-layout--pre-layout-config
+    (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
+  (let* ((week-file (claude-multi-layout--current-week-file))
+         (week-buf  (claude-multi-layout--find-or-create-org-file week-file))
+         (jira-buf  (claude-multi-layout--find-or-create-org-file "jira-triage.org"))
+         (email-buf (claude-multi-layout--find-or-create-org-file "email-triage.org"))
+         (task-buf  (claude-multi-layout--find-or-create-org-file "task-triage.org")))
+    (delete-other-windows)
+    ;; Left: weekly plan (full height)
+    (switch-to-buffer week-buf)
+    ;; Right column at ~60% width
+    (let ((right-win (split-window-right (floor (* (window-width) 0.6)))))
+      (select-window right-win)
+      ;; Top-right: jira triage
+      (switch-to-buffer jira-buf)
+      (claude-multi-layout--disable-olivetti-in-buffer jira-buf)
+      ;; Middle-right: email triage (~33% of right column height)
+      (let ((mid-win (split-window-below (floor (* (window-height) 0.33)))))
+        (select-window mid-win)
+        (switch-to-buffer email-buf)
+        (claude-multi-layout--disable-olivetti-in-buffer email-buf)
+        ;; Bottom-right: task triage (remaining ~50% of what's left)
+        (let ((bot-win (split-window-below (floor (* (window-height) 0.5)))))
+          (select-window bot-win)
+          (switch-to-buffer task-buf)
+          (claude-multi-layout--disable-olivetti-in-buffer task-buf))))
+    ;; Return focus to weekly plan
+    (select-window (get-buffer-window week-buf))
+    (claude-multi-layout--ensure-progress-visible)
+    (setq claude-multi-layout--current 'morning)
+    (message "Layout: morning (%s)" week-file)))
+
+;;;###autoload
+(defun claude-multi-layout/start-morning ()
+  "One-keypress morning startup: Kitty layout, Emacs layout, triage agent.
+1. Ensures Kitty OS windows are positioned (Emacs + Agents).
+2. Arranges Emacs into the morning layout.
+3. Spawns a Claude agent running /workview:triage-all."
+  (interactive)
+  (claude-multi-layout--ensure-kitty-layout)
+  (claude-multi-layout/morning)
+  (if (and (fboundp 'cma--available-p) (cma--available-p))
+      (cma--call "spawn"
+                 "--task" "/workview:triage-all"
+                 "--dir" (expand-file-name "~/projects/workview")
+                 "--prompt" "/workview:triage-all"
+                 "--json")
+    (message "Morning: cma not available — skipping agent spawn")))
+
 ;;;###autoload
 (defun claude-multi-layout/coding ()
   "Restore normal window configuration (exit layout mode).
@@ -152,16 +243,17 @@ Progress buffer stays visible if it was showing."
 ;;;###autoload
 (defun claude-multi-layout/switch (layout-name)
   "Switch to LAYOUT-NAME (string).
-Valid names: triage, triage-all, task-triage, planning, coding."
+Valid names: triage, triage-all, task-triage, planning, morning, coding."
   (interactive
    (list (completing-read "Layout: "
-                          '("triage" "triage-all" "task-triage" "planning" "coding")
+                          '("triage" "triage-all" "task-triage" "planning" "morning" "coding")
                           nil t)))
   (pcase layout-name
     ("triage"      (claude-multi-layout/triage))
     ("triage-all"  (claude-multi-layout/triage-all))
     ("task-triage" (claude-multi-layout/task-triage))
     ("planning"    (claude-multi-layout/planning))
+    ("morning"     (claude-multi-layout/morning))
     ("coding"      (claude-multi-layout/coding))
     (_             (message "Unknown layout: %s" layout-name))))
 

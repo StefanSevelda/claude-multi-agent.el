@@ -810,6 +810,7 @@ Keybindings:
         :desc "Triage layout"           "t" #'claude-multi-layout/triage
         :desc "Task triage layout"      "T" #'claude-multi-layout/task-triage
         :desc "Planning layout"         "p" #'claude-multi-layout/planning
+        :desc "Morning agenda"          "m" #'claude-multi-layout/start-morning
         :desc "Coding layout"           "c" #'claude-multi-layout/coding
         :desc "Triage-all layout"       "a" #'claude-multi-layout/triage-all
         :desc "Switch layout"           "l" #'claude-multi-layout/switch
