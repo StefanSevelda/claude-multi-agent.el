@@ -226,15 +226,15 @@ Progress buffer pinned at bottom."
   "One-keypress morning startup: Kitty layout, Emacs layout, triage agent.
 1. Ensures Kitty OS windows are positioned (Emacs + Agents).
 2. Arranges Emacs into the morning layout.
-3. Spawns a Claude agent running /workview:triage-all."
+3. Spawns a Claude agent running /workview:workview-triage-all."
   (interactive)
   (claude-multi-layout--ensure-kitty-layout)
   (claude-multi-layout/morning)
   (if (and (fboundp 'cma--available-p) (cma--available-p))
       (cma--call "spawn"
-                 "--task" "/workview:triage-all"
+                 "--task" "workview-triage-all"
                  "--dir" (expand-file-name "~/projects/workview")
-                 "--prompt" "/workview:triage-all"
+                 "--prompt" "/workview:workview-triage-all"
                  "--json")
     (message "Morning: cma not available — skipping agent spawn")))
 
