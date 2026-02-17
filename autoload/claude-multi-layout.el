@@ -27,6 +27,15 @@
 (defvar claude-multi-layout--pre-layout-config nil
   "Window configuration saved before entering a layout, for restore.")
 
+(defvar claude-multi-layout--time-override nil
+  "When non-nil, an Emacs time value to use instead of `current-time'.
+Set via `claude-multi-layout/simulate-time' for testing layouts
+at different times of day.  Reset with `claude-multi-layout/reset-time'.")
+
+(defun claude-multi-layout--now ()
+  "Return the effective current time, respecting `claude-multi-layout--time-override'."
+  (or claude-multi-layout--time-override (current-time)))
+
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Helpers
 ;; ──────────────────────────────────────────────────────────────────────────────
@@ -91,7 +100,7 @@ the agent has written the real file."
 (defun claude-multi-layout--current-week-file ()
   "Return the filename for the current week's planning file.
 Format: week-YYYY-Www.org"
-  (let* ((now (current-time))
+  (let* ((now (claude-multi-layout--now))
          (week-num (string-to-number (format-time-string "%V" now)))
          (year (string-to-number (format-time-string "%G" now))))
     (format "week-%d-W%02d.org" year week-num)))
@@ -257,6 +266,36 @@ Progress buffer pinned at bottom."
   "Face for the current time slot indicator in schedule views."
   :group 'claude-multi)
 
+(defun claude-multi-layout--apply-assignment-indicator (start-pos now-hour now-min)
+  "Highlight the focus assignment block covering the current time.
+Scans from START-POS for lines matching `- HH:MM-HH:MM` and highlights
+the one where NOW-HOUR:NOW-MIN falls within the range, including any
+indented continuation lines."
+  (let ((now-total (+ (* now-hour 60) now-min)))
+    (save-excursion
+      (goto-char start-pos)
+      (while (re-search-forward
+              "^- \\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\) "
+              nil t)
+        (let* ((range-start (+ (* (string-to-number (match-string 1)) 60)
+                               (string-to-number (match-string 2))))
+               (range-end (+ (* (string-to-number (match-string 3)) 60)
+                             (string-to-number (match-string 4)))))
+          (when (and (>= now-total range-start)
+                     (< now-total range-end))
+            (let* ((line-start (line-beginning-position))
+                   (block-end (save-excursion
+                                (forward-line 1)
+                                (while (and (not (eobp))
+                                            (looking-at "^  "))
+                                  (forward-line 1))
+                                (point)))
+                   (ov (make-overlay line-start block-end)))
+              (overlay-put ov 'face 'claude-multi-layout-now-indicator)
+              (overlay-put ov 'priority 100)
+              (overlay-put ov 'claude-multi-time-indicator t)
+              (push ov claude-multi-layout--time-indicator-overlays))))))))
+
 (defun claude-multi-layout--derive-today-buffer ()
   "Extract today's schedule from the week file into a read-only derived buffer.
 Returns the buffer.  The buffer is not backed by a file — it is a
@@ -266,14 +305,15 @@ current time slot."
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-path (expand-file-name week-file claude-multi-layout--org-base-dir))
          (today-buf (get-buffer-create claude-multi-layout--today-buffer-name))
-         (dow (format-time-string "%a"))  ; e.g. "Mon", "Tue"
-         (now-hour (string-to-number (format-time-string "%H")))
-         (now-min (string-to-number (format-time-string "%M"))))
+         (now (claude-multi-layout--now))
+         (dow (format-time-string "%a" now))  ; e.g. "Mon", "Tue"
+         (now-hour (string-to-number (format-time-string "%H" now)))
+         (now-min (string-to-number (format-time-string "%M" now))))
     (with-current-buffer today-buf
       (let ((inhibit-read-only t))
         (erase-buffer)
         (insert (format "#+TITLE: Today's Schedule (%s)\n\n"
-                        (format-time-string "%A, %B %d")))
+                        (format-time-string "%A, %B %d" now)))
         (if (not (file-exists-p week-path))
             (insert "No week file found. Run /workview:plan-week first.\n")
           ;; Read the week file and extract today's column from the calendar grid
@@ -336,7 +376,10 @@ current time slot."
               (setq today-lines (nreverse today-lines))
               (insert "| Time  | Block                  |\n")
               (insert "|-------+------------------------|\n")
-              (let ((now-line-start nil))
+              (let* ((now-line-start nil)
+                     (assignments-start nil)
+                     (dow-full (format-time-string "%A" now)))
+                ;; Build the time table
                 (dolist (entry today-lines)
                   (let ((time-str (nth 0 entry))
                         (block-str (nth 1 entry))
@@ -347,45 +390,41 @@ current time slot."
                                     block-str))
                     (when is-now
                       (setq now-line-start line-start))))
-                ;; Apply overlay to the current time slot line
+                (insert "\n")
+                ;; Extract and insert focus block assignments
+                (let ((day-content
+                       (with-temp-buffer
+                         (insert week-content)
+                         (goto-char (point-min))
+                         (when (re-search-forward
+                                (format "^\\*\\*\\* %s" dow-full) nil t)
+                           (beginning-of-line)
+                           (let ((start (point))
+                                 (end (save-excursion
+                                        (forward-line 1)
+                                        (if (re-search-forward "^\\*\\*\\* " nil t)
+                                            (line-beginning-position)
+                                          (point-max)))))
+                             (buffer-substring-no-properties start end))))))
+                  (when day-content
+                    (setq assignments-start (point))
+                    (insert "** Focus Assignments\n\n")
+                    (insert day-content)))
+                ;; Enable org-mode BEFORE creating overlays (org-mode resets them)
+                (org-mode)
+                ;; Now apply all overlays after org-mode fontification
                 (when now-line-start
                   (let ((ov (make-overlay now-line-start
                                           (save-excursion
                                             (goto-char now-line-start)
                                             (line-end-position)))))
                     (overlay-put ov 'face 'claude-multi-layout-now-indicator)
+                    (overlay-put ov 'priority 100)
                     (overlay-put ov 'claude-multi-time-indicator t)
-                    (push ov claude-multi-layout--time-indicator-overlays))))
-              (insert "\n")
-              ;; Also extract today's focus block assignments if present
-              (let ((dow-full (format-time-string "%A"))) ; e.g. "Monday"
-                (with-temp-buffer
-                  (insert week-content)
-                  (goto-char (point-min))
-                  (when (re-search-forward
-                         (format "^\\*\\*\\* %s" dow-full) nil t)
-                    (beginning-of-line)
-                    (let ((start (point))
-                          (end (save-excursion
-                                 (if (re-search-forward "^\\*\\*\\* " nil t)
-                                     (line-beginning-position)
-                                   (point-max)))))
-                      (with-current-buffer today-buf
-                        (insert "** Focus Assignments\n\n")
-                        (insert (with-temp-buffer
-                                  (insert-file-contents week-path)
-                                  (goto-char (point-min))
-                                  (when (re-search-forward
-                                         (format "^\\*\\*\\* %s" dow-full) nil t)
-                                    (beginning-of-line)
-                                    (let ((s (point))
-                                          (e (save-excursion
-                                               (if (re-search-forward "^\\*\\*\\* " nil t)
-                                                   (line-beginning-position)
-                                                 (point-max)))))
-                                      (buffer-substring-no-properties s e)))
-                                  ""))))))))))
-        (org-mode)
+                    (push ov claude-multi-layout--time-indicator-overlays)))
+                (when assignments-start
+                  (claude-multi-layout--apply-assignment-indicator
+                   assignments-start now-hour now-min))))))
         (setq buffer-read-only t)
         (goto-char (point-min))))
     today-buf))
@@ -404,8 +443,9 @@ and highlights it."
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-path (expand-file-name week-file claude-multi-layout--org-base-dir))
          (week-buf (find-buffer-visiting week-path))
-         (now-hour (string-to-number (format-time-string "%H")))
-         (now-min (string-to-number (format-time-string "%M")))
+         (now (claude-multi-layout--now))
+         (now-hour (string-to-number (format-time-string "%H" now)))
+         (now-min (string-to-number (format-time-string "%M" now)))
          ;; Snap to 30-min slot
          (slot-time (format "%02d:%02d" now-hour (* (/ now-min 30) 30))))
     (when (and week-buf (buffer-live-p week-buf))
@@ -421,6 +461,7 @@ and highlights it."
               (beginning-of-line)
               (let ((ov (make-overlay (point) (line-end-position))))
                 (overlay-put ov 'face 'claude-multi-layout-now-indicator)
+                (overlay-put ov 'priority 100)
                 (overlay-put ov 'claude-multi-time-indicator t)
                 (push ov claude-multi-layout--time-indicator-overlays)))))))))
 
@@ -449,8 +490,11 @@ Called every 60 seconds by `claude-multi-layout--time-indicator-timer'."
     (claude-multi-layout--apply-week-file-indicator)))
 
 (defun claude-multi-layout--start-time-indicator ()
-  "Start the 60-second timer for refreshing the time indicator."
-  (claude-multi-layout--stop-time-indicator)
+  "Start the 60-second timer for refreshing the time indicator.
+Only cancels any existing timer — does NOT clear overlays, since
+the caller (focus layout) creates overlays before starting the timer."
+  (when claude-multi-layout--time-indicator-timer
+    (cancel-timer claude-multi-layout--time-indicator-timer))
   (setq claude-multi-layout--time-indicator-timer
         (run-with-timer 60 60 #'claude-multi-layout--update-time-indicator)))
 
@@ -478,6 +522,8 @@ Top-right: task-triage.org for capturing ideas.
 Bottom: progress buffer at 50% height.
 Kitty: Emacs 40% | Agents 60%."
   (interactive)
+  ;; Clear any existing time indicator overlays from previous invocation
+  (claude-multi-layout--clear-time-overlays)
   (unless claude-multi-layout--pre-layout-config
     (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
   (let* ((today-buf (claude-multi-layout--derive-today-buffer))
@@ -563,6 +609,39 @@ Useful after workview CLI regenerates files."
             (revert-buffer t t t)
             (cl-incf reverted)))))
     (message "Reverted %d buffer(s)" reverted)))
+
+;; ──────────────────────────────────────────────────────────────────────────────
+;; Time simulation (for testing layouts at different times)
+;; ──────────────────────────────────────────────────────────────────────────────
+
+;;;###autoload
+(defun claude-multi-layout/simulate-time (date-time-str)
+  "Simulate a different date/time for layout calculations.
+DATE-TIME-STR should be like \"2026-02-18 13:00\" (YYYY-MM-DD HH:MM).
+Affects week file selection, today schedule derivation, and time indicators.
+Use `claude-multi-layout/reset-time' to restore real time."
+  (interactive "sSimulate date/time (YYYY-MM-DD HH:MM): ")
+  (let ((parsed (parse-time-string date-time-str)))
+    ;; parse-time-string returns (SEC MIN HOUR DAY MON YEAR ...)
+    ;; Fill in zero seconds if not provided
+    (unless (nth 0 parsed) (setf (nth 0 parsed) 0))
+    (setq claude-multi-layout--time-override
+          (encode-time (nth 0 parsed)   ; sec
+                       (nth 1 parsed)   ; min
+                       (nth 2 parsed)   ; hour
+                       (nth 3 parsed)   ; day
+                       (nth 4 parsed)   ; month
+                       (nth 5 parsed))) ; year
+    (message "Time override: %s (use claude-multi-layout/reset-time to restore)"
+             (format-time-string "%A, %B %d %Y %H:%M"
+                                 claude-multi-layout--time-override))))
+
+;;;###autoload
+(defun claude-multi-layout/reset-time ()
+  "Clear the time override, restoring real system time for layouts."
+  (interactive)
+  (setq claude-multi-layout--time-override nil)
+  (message "Time override cleared — using real time"))
 
 (provide 'claude-multi-layout)
 ;;; claude-multi-layout.el ends here
