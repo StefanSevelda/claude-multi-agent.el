@@ -40,14 +40,16 @@ at different times of day.  Reset with `claude-multi-layout/reset-time'.")
 ;; Helpers
 ;; ──────────────────────────────────────────────────────────────────────────────
 
-(defun claude-multi-layout--ensure-progress-visible ()
+(defun claude-multi-layout--ensure-progress-visible (&optional height)
   "Ensure the progress buffer is displayed in a bottom side-window.
 Creates the buffer if it doesn't exist.  Any existing non-side window
 showing the buffer is replaced by a dedicated side-window so the
-progress table stays pinned at the bottom across layout switches."
+progress table stays pinned at the bottom across layout switches.
+HEIGHT defaults to 0.25."
   (let ((buf (get-buffer-create
               (or (bound-and-true-p claude-multi-progress-buffer-name)
-                  "*Claude Multi-Agent Progress*"))))
+                  "*Claude Multi-Agent Progress*")))
+        (h (or height 0.25)))
     ;; Kill any non-side window showing the buffer first
     (when-let ((existing (get-buffer-window buf t)))
       (unless (window-parameter existing 'window-side)
@@ -55,8 +57,8 @@ progress table stays pinned at the bottom across layout switches."
     ;; Always display via side-window to guarantee bottom pinning
     (unless (get-buffer-window buf t)
       (display-buffer-in-side-window buf
-        '((side . bottom) (slot . 0)
-          (window-height . 0.25)
+        `((side . bottom) (slot . 0)
+          (window-height . ,h)
           (preserve-size . (nil . t))
           (dedicated . t))))))
 
@@ -121,12 +123,10 @@ Format: week-YYYY-Www.org"
   "Activate triage layout: email-triage.org | jira-triage.org side-by-side.
 Progress buffer pinned at bottom."
   (interactive)
-  (unless claude-multi-layout--pre-layout-config
-    (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
   (let ((email-buf (claude-multi-layout--find-org-file "email-triage.org"))
         (jira-buf (claude-multi-layout--find-org-file "jira-triage.org")))
     (when (or email-buf jira-buf)
-      (delete-other-windows)
+      (claude-multi-layout--setup-layout 'triage)
       (when email-buf
         (switch-to-buffer email-buf)
         (claude-multi-layout--disable-olivetti-in-buffer email-buf))
@@ -139,8 +139,6 @@ Progress buffer pinned at bottom."
       (when (and (not email-buf) jira-buf)
         (switch-to-buffer jira-buf)
         (claude-multi-layout--disable-olivetti-in-buffer jira-buf))
-      (claude-multi-layout--ensure-progress-visible)
-      (setq claude-multi-layout--current 'triage)
       (message "Layout: triage (email + jira)"))))
 
 ;;;###autoload
@@ -156,14 +154,10 @@ Progress buffer pinned at bottom."
   "Activate task-triage layout: task-triage.org full width.
 Progress buffer pinned at bottom."
   (interactive)
-  (unless claude-multi-layout--pre-layout-config
-    (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
   (let ((task-buf (claude-multi-layout--find-org-file "task-triage.org")))
     (when task-buf
-      (delete-other-windows)
+      (claude-multi-layout--setup-layout 'task-triage)
       (switch-to-buffer task-buf)
-      (claude-multi-layout--ensure-progress-visible)
-      (setq claude-multi-layout--current 'task-triage)
       (message "Layout: task-triage"))))
 
 ;;;###autoload
@@ -171,27 +165,43 @@ Progress buffer pinned at bottom."
   "Activate planning layout: current week file full width.
 Progress buffer pinned at bottom."
   (interactive)
-  (unless claude-multi-layout--pre-layout-config
-    (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-buf (claude-multi-layout--find-org-file week-file)))
     (when week-buf
-      (delete-other-windows)
+      (claude-multi-layout--setup-layout 'planning)
       (switch-to-buffer week-buf)
-      (claude-multi-layout--ensure-progress-visible)
-      (setq claude-multi-layout--current 'planning)
       (message "Layout: planning (%s)" week-file))))
 
-(defun claude-multi-layout--ensure-kitty-layout ()
-  "Ensure the Kitty OS window layout (Emacs + Agents) is initialised.
-Shells out to `cma layout init'.  Idempotent — the Go code returns
-early when the layout is already active.  Logs a warning if the `cma'
-binary is not found."
+(defun claude-multi-layout--reset-kitty-layout ()
+  "Re-position Kitty OS windows (Emacs left, Agents right).
+Calls `cma layout reset'.  Falls back gracefully if cma is unavailable."
+  (when (and (fboundp 'cma--available-p) (cma--available-p))
+    (cma--call-raw "layout" "reset")))
+
+;;;###autoload
+(defun claude-multi-layout/reset-kitty ()
+  "Interactively reposition Kitty OS windows."
+  (interactive)
   (if (and (fboundp 'cma--available-p) (cma--available-p))
-      (let ((output (cma--call-raw "layout" "init")))
-        (when output
-          (message "Morning: %s" (car (last (split-string output "\n" t))))))
-    (message "Morning: cma binary not found — skipping Kitty layout")))
+      (let ((output (cma--call-raw "layout" "reset")))
+        (message "%s" (or output "Layout reset")))
+    (message "cma binary not found — cannot reset layout")))
+
+(defun claude-multi-layout--setup-layout (name &optional progress-height)
+  "Common setup for entering a layout.
+Saves window config (first time only), clears existing windows,
+resets Kitty positioning, and pins the progress buffer.
+NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25."
+  ;; Save pre-layout config (only if not already in a layout)
+  (unless claude-multi-layout--pre-layout-config
+    (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
+  (delete-other-windows)
+  ;; Reset Kitty OS window positioning
+  (claude-multi-layout--reset-kitty-layout)
+  ;; Pin progress buffer at bottom
+  (claude-multi-layout--ensure-progress-visible progress-height)
+  ;; Track current layout
+  (setq claude-multi-layout--current name))
 
 ;;;###autoload
 (defun claude-multi-layout/morning ()
@@ -199,14 +209,12 @@ binary is not found."
 Right column shows jira-triage, email-triage, and task-triage stacked.
 Progress buffer pinned at bottom."
   (interactive)
-  (unless claude-multi-layout--pre-layout-config
-    (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-buf  (claude-multi-layout--find-or-create-org-file week-file))
          (jira-buf  (claude-multi-layout--find-or-create-org-file "jira-triage.org"))
          (email-buf (claude-multi-layout--find-or-create-org-file "email-triage.org"))
          (task-buf  (claude-multi-layout--find-or-create-org-file "task-triage.org")))
-    (delete-other-windows)
+    (claude-multi-layout--setup-layout 'morning)
     ;; Left: weekly plan (full height)
     (switch-to-buffer week-buf)
     ;; Right column at ~60% width
@@ -227,18 +235,14 @@ Progress buffer pinned at bottom."
           (claude-multi-layout--disable-olivetti-in-buffer task-buf))))
     ;; Return focus to weekly plan
     (select-window (get-buffer-window week-buf))
-    (claude-multi-layout--ensure-progress-visible)
-    (setq claude-multi-layout--current 'morning)
     (message "Layout: morning (%s)" week-file)))
 
 ;;;###autoload
 (defun claude-multi-layout/start-morning ()
-  "One-keypress morning startup: Kitty layout, Emacs layout, triage agent.
-1. Ensures Kitty OS windows are positioned (Emacs + Agents).
-2. Arranges Emacs into the morning layout.
-3. Spawns a Claude agent running /workview:workview-triage-all."
+  "One-keypress morning startup: Emacs layout + triage agent.
+1. Arranges Emacs into the morning layout (also resets Kitty windows).
+2. Spawns a Claude agent running /workview:workview-triage-all."
   (interactive)
-  (claude-multi-layout--ensure-kitty-layout)
   (claude-multi-layout/morning)
   (if (and (fboundp 'cma--available-p) (cma--available-p))
       (cma--call "spawn"
@@ -505,30 +509,18 @@ the caller (focus layout) creates overlays before starting the timer."
     (setq claude-multi-layout--time-indicator-timer nil))
   (claude-multi-layout--clear-time-overlays))
 
-(defun claude-multi-layout--ensure-kitty-layout-focus ()
-  "Ensure the Kitty OS window layout with focus proportions (40/60).
-Shells out to `cma layout init' then repositions with focus proportions."
-  (if (and (fboundp 'cma--available-p) (cma--available-p))
-      (let ((output (cma--call-raw "layout" "init" "--emacs-pct" "40")))
-        (when output
-          (message "Focus: %s" (car (last (split-string output "\n" t))))))
-    (message "Focus: cma binary not found — skipping Kitty layout")))
-
 ;;;###autoload
 (defun claude-multi-layout/focus ()
   "Activate focus layout for daily focused work.
 Top-left: today's schedule (derived read-only buffer).
 Top-right: task-triage.org for capturing ideas.
-Bottom: progress buffer at 50% height.
-Kitty: Emacs 40% | Agents 60%."
+Bottom: progress buffer at 50% height."
   (interactive)
   ;; Clear any existing time indicator overlays from previous invocation
   (claude-multi-layout--clear-time-overlays)
-  (unless claude-multi-layout--pre-layout-config
-    (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
   (let* ((today-buf (claude-multi-layout--derive-today-buffer))
          (triage-buf (claude-multi-layout--find-or-create-org-file "task-triage.org")))
-    (delete-other-windows)
+    (claude-multi-layout--setup-layout 'focus 0.5)
     ;; Top-left: today's schedule
     (switch-to-buffer today-buf)
     ;; Top-right: task triage
@@ -538,22 +530,9 @@ Kitty: Emacs 40% | Agents 60%."
       (claude-multi-layout--disable-olivetti-in-buffer triage-buf))
     ;; Return focus to today's schedule
     (select-window (get-buffer-window today-buf))
-    ;; Progress side-window at 50% height (larger than default 25%)
-    (let ((buf (get-buffer-create
-                (or (bound-and-true-p claude-multi-progress-buffer-name)
-                    "*Claude Multi-Agent Progress*"))))
-      (when-let ((existing (get-buffer-window buf t)))
-        (unless (window-parameter existing 'window-side)
-          (delete-window existing)))
-      (display-buffer-in-side-window buf
-        '((side . bottom) (slot . 0)
-          (window-height . 0.5)
-          (preserve-size . (nil . t))
-          (dedicated . t))))
     ;; Start time indicator timer and apply initial week file indicator
     (claude-multi-layout--start-time-indicator)
     (claude-multi-layout--apply-week-file-indicator)
-    (setq claude-multi-layout--current 'focus)
     (message "Layout: focus (today + triage + progress)")))
 
 ;;;###autoload

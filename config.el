@@ -815,7 +815,8 @@ Keybindings:
         :desc "Coding layout"           "c" #'claude-multi-layout/coding
         :desc "Triage-all layout"       "a" #'claude-multi-layout/triage-all
         :desc "Switch layout"           "l" #'claude-multi-layout/switch
-        :desc "Revert files"            "r" #'claude-multi-layout/revert-files)))
+        :desc "Revert files"            "r" #'claude-multi-layout/revert-files
+        :desc "Reset Kitty layout"     "R" #'claude-multi-layout/reset-kitty)))
 
 ;;;###autoload
 (defun claude-multi/debug-status-matching ()
