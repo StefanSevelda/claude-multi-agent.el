@@ -518,6 +518,9 @@ Progress buffer stays visible if it was showing."
         (set-window-configuration claude-multi-layout--pre-layout-config)
         (setq claude-multi-layout--pre-layout-config nil))
     (delete-other-windows))
+  ;; Re-pin progress buffer as side-window (set-window-configuration
+  ;; doesn't reliably preserve side-window parameters)
+  (claude-multi-layout--ensure-progress-visible)
   (setq claude-multi-layout--current nil)
   (message "Layout: exit (restored)"))
 
