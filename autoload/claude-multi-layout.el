@@ -163,6 +163,9 @@ NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25."
   ;; Save pre-layout config (only if not already in a layout)
   (unless claude-multi-layout--pre-layout-config
     (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
+  ;; Ensure we're in a regular window (not a side-window) before clearing
+  (when (window-parameter (selected-window) 'window-side)
+    (select-window (window-main-window)))
   (delete-other-windows)
   ;; Reset Kitty OS window positioning
   (claude-multi-layout--reset-kitty-layout)
