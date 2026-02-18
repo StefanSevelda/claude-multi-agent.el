@@ -807,13 +807,9 @@ Keybindings:
          :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
          :desc "Next diff file"         "n" #'claude-multi/next-diff-file))
        (:prefix ("l" . "layout")
-        :desc "Triage layout"           "t" #'claude-multi-layout/triage
-        :desc "Task triage layout"      "T" #'claude-multi-layout/task-triage
-        :desc "Planning layout"         "p" #'claude-multi-layout/planning
-        :desc "Morning agenda"          "m" #'claude-multi-layout/start-morning
+        :desc "Agenda layout"           "a" #'claude-multi-layout/start-agenda
         :desc "Focus layout"            "f" #'claude-multi-layout/focus
-        :desc "Coding layout"           "c" #'claude-multi-layout/coding
-        :desc "Triage-all layout"       "a" #'claude-multi-layout/triage-all
+        :desc "Exit layout"             "e" #'claude-multi-layout/exit
         :desc "Switch layout"           "l" #'claude-multi-layout/switch
         :desc "Revert files"            "r" #'claude-multi-layout/revert-files
         :desc "Reset Kitty layout"     "R" #'claude-multi-layout/reset-kitty)))

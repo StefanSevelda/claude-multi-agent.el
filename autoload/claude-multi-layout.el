@@ -7,13 +7,12 @@
 ;; pinned as a bottom side-window via display-buffer-alist.
 ;;
 ;; Layouts:
-;;   - triage:      email-triage.org | jira-triage.org  (side-by-side)
-;;   - triage-all:  same as triage (entry point for full triage flow)
-;;   - task-triage:  task-triage.org (full width)
-;;   - planning:    week-YYYY-Www.org (full width)
-;;   - morning:     week file (60%) | jira/email/task triage (stacked right)
-;;   - focus:       today schedule | task-triage (top), progress (bottom 50%)
-;;   - coding:      restore normal window configuration
+;;   - agenda:  week file (60%) | email/task/jira triage (stacked right)
+;;   - focus:   today schedule | task-triage (top), progress (bottom 50%)
+;;   - exit:    restore normal window configuration
+;;
+;; Helpers:
+;;   - focus-buffer:  focus a specific file's window within the current layout
 
 ;;; Code:
 
@@ -115,62 +114,31 @@ Format: week-YYYY-Www.org"
         (olivetti-mode -1)))))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
-;; Layout Functions
+;; Buffer Focus Helper
 ;; ──────────────────────────────────────────────────────────────────────────────
 
 ;;;###autoload
-(defun claude-multi-layout/triage ()
-  "Activate triage layout: email-triage.org | jira-triage.org side-by-side.
-Progress buffer pinned at bottom."
-  (interactive)
-  (let ((email-buf (claude-multi-layout--find-org-file "email-triage.org"))
-        (jira-buf (claude-multi-layout--find-org-file "jira-triage.org")))
-    (when (or email-buf jira-buf)
-      (claude-multi-layout--setup-layout 'triage)
-      (when email-buf
-        (switch-to-buffer email-buf)
-        (claude-multi-layout--disable-olivetti-in-buffer email-buf))
-      (when (and email-buf jira-buf)
-        (split-window-right)
-        (other-window 1)
-        (switch-to-buffer jira-buf)
-        (claude-multi-layout--disable-olivetti-in-buffer jira-buf)
-        (other-window 1))
-      (when (and (not email-buf) jira-buf)
-        (switch-to-buffer jira-buf)
-        (claude-multi-layout--disable-olivetti-in-buffer jira-buf))
-      (message "Layout: triage (email + jira)"))))
+(defun claude-multi-layout/focus-buffer (filename)
+  "Focus the window displaying FILENAME within the current layout.
+If visible in a window, select that window. Otherwise switch current window.
+Reverts from disk to ensure fresh content."
+  (interactive "fFocus file: ")
+  (let* ((path (if (file-name-absolute-p filename)
+                   filename
+                 (expand-file-name filename claude-multi-layout--org-base-dir)))
+         (buf (find-file-noselect path)))
+    (with-current-buffer buf
+      (when (file-exists-p buffer-file-name)
+        (revert-buffer t t t)))
+    (if-let ((win (get-buffer-window buf t)))
+        (select-window win)
+      (switch-to-buffer buf))
+    (message "Focused: %s" (file-name-nondirectory path))))
 
-;;;###autoload
-(defun claude-multi-layout/triage-all ()
-  "Activate triage-all layout (same as triage, used as entry point for full triage flow)."
-  (interactive)
-  (claude-multi-layout/triage)
-  (setq claude-multi-layout--current 'triage-all)
-  (message "Layout: triage-all"))
+;; ──────────────────────────────────────────────────────────────────────────────
+;; Layout Functions
+;; ──────────────────────────────────────────────────────────────────────────────
 
-;;;###autoload
-(defun claude-multi-layout/task-triage ()
-  "Activate task-triage layout: task-triage.org full width.
-Progress buffer pinned at bottom."
-  (interactive)
-  (let ((task-buf (claude-multi-layout--find-org-file "task-triage.org")))
-    (when task-buf
-      (claude-multi-layout--setup-layout 'task-triage)
-      (switch-to-buffer task-buf)
-      (message "Layout: task-triage"))))
-
-;;;###autoload
-(defun claude-multi-layout/planning ()
-  "Activate planning layout: current week file full width.
-Progress buffer pinned at bottom."
-  (interactive)
-  (let* ((week-file (claude-multi-layout--current-week-file))
-         (week-buf (claude-multi-layout--find-org-file week-file)))
-    (when week-buf
-      (claude-multi-layout--setup-layout 'planning)
-      (switch-to-buffer week-buf)
-      (message "Layout: planning (%s)" week-file))))
 
 (defun claude-multi-layout--reset-kitty-layout ()
   "Re-position Kitty OS windows (Emacs left, Agents right).
@@ -204,53 +172,53 @@ NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25."
   (setq claude-multi-layout--current name))
 
 ;;;###autoload
-(defun claude-multi-layout/morning ()
-  "Activate morning layout: weekly plan (left 60%) with triage stack (right).
-Right column shows jira-triage, email-triage, and task-triage stacked.
+(defun claude-multi-layout/agenda ()
+  "Activate agenda layout: weekly plan (left 60%) with triage stack (right).
+Right column shows email-triage (top), task-triage (middle), jira-triage (bottom).
 Progress buffer pinned at bottom."
   (interactive)
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-buf  (claude-multi-layout--find-or-create-org-file week-file))
-         (jira-buf  (claude-multi-layout--find-or-create-org-file "jira-triage.org"))
          (email-buf (claude-multi-layout--find-or-create-org-file "email-triage.org"))
-         (task-buf  (claude-multi-layout--find-or-create-org-file "task-triage.org")))
-    (claude-multi-layout--setup-layout 'morning)
+         (task-buf  (claude-multi-layout--find-or-create-org-file "task-triage.org"))
+         (jira-buf  (claude-multi-layout--find-or-create-org-file "jira-triage.org")))
+    (claude-multi-layout--setup-layout 'agenda)
     ;; Left: weekly plan (full height)
     (switch-to-buffer week-buf)
     ;; Right column at ~60% width
     (let ((right-win (split-window-right (floor (* (window-width) 0.6)))))
       (select-window right-win)
-      ;; Top-right: jira triage
-      (switch-to-buffer jira-buf)
-      (claude-multi-layout--disable-olivetti-in-buffer jira-buf)
-      ;; Middle-right: email triage (~33% of right column height)
+      ;; Top-right: email triage
+      (switch-to-buffer email-buf)
+      (claude-multi-layout--disable-olivetti-in-buffer email-buf)
+      ;; Middle-right: task triage (~33% of right column height)
       (let ((mid-win (split-window-below (floor (* (window-height) 0.33)))))
         (select-window mid-win)
-        (switch-to-buffer email-buf)
-        (claude-multi-layout--disable-olivetti-in-buffer email-buf)
-        ;; Bottom-right: task triage (remaining ~50% of what's left)
+        (switch-to-buffer task-buf)
+        (claude-multi-layout--disable-olivetti-in-buffer task-buf)
+        ;; Bottom-right: jira triage (remaining ~50% of what's left)
         (let ((bot-win (split-window-below (floor (* (window-height) 0.5)))))
           (select-window bot-win)
-          (switch-to-buffer task-buf)
-          (claude-multi-layout--disable-olivetti-in-buffer task-buf))))
+          (switch-to-buffer jira-buf)
+          (claude-multi-layout--disable-olivetti-in-buffer jira-buf))))
     ;; Return focus to weekly plan
     (select-window (get-buffer-window week-buf))
-    (message "Layout: morning (%s)" week-file)))
+    (message "Layout: agenda (%s)" week-file)))
 
 ;;;###autoload
-(defun claude-multi-layout/start-morning ()
-  "One-keypress morning startup: Emacs layout + triage agent.
-1. Arranges Emacs into the morning layout (also resets Kitty windows).
+(defun claude-multi-layout/start-agenda ()
+  "One-keypress agenda startup: Emacs layout + triage agent.
+1. Arranges Emacs into the agenda layout (also resets Kitty windows).
 2. Spawns a Claude agent running /workview:workview-triage-all."
   (interactive)
-  (claude-multi-layout/morning)
+  (claude-multi-layout/agenda)
   (if (and (fboundp 'cma--available-p) (cma--available-p))
       (cma--call "spawn"
                  "--task" "workview-triage-all"
                  "--dir" (expand-file-name "~/projects/workview")
                  "--prompt" "/workview:workview-triage-all"
                  "--json")
-    (message "Morning: cma not available — skipping agent spawn")))
+    (message "Agenda: cma not available — skipping agent spawn")))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Focus Layout — derived today buffer + task triage + large progress
@@ -536,7 +504,7 @@ Bottom: progress buffer at 50% height."
     (message "Layout: focus (today + triage + progress)")))
 
 ;;;###autoload
-(defun claude-multi-layout/coding ()
+(defun claude-multi-layout/exit ()
   "Restore normal window configuration (exit layout mode).
 Progress buffer stays visible if it was showing."
   (interactive)
@@ -548,29 +516,25 @@ Progress buffer stays visible if it was showing."
         (setq claude-multi-layout--pre-layout-config nil))
     (delete-other-windows))
   (setq claude-multi-layout--current nil)
-  (message "Layout: coding (normal)"))
+  (message "Layout: exit (restored)"))
 
 ;;;###autoload
 (defun claude-multi-layout/switch (layout-name)
   "Switch to LAYOUT-NAME (string).
-Valid names: triage, triage-all, task-triage, planning, morning, focus, coding."
+Valid names: agenda, focus, exit."
   (interactive
    (list (completing-read "Layout: "
-                          '("triage" "triage-all" "task-triage" "planning" "morning" "focus" "coding")
+                          '("agenda" "focus" "exit")
                           nil t)))
   ;; Stop focus timer when switching away from focus layout
   (when (and (eq claude-multi-layout--current 'focus)
              (not (string= layout-name "focus")))
     (claude-multi-layout--stop-time-indicator))
   (pcase layout-name
-    ("triage"      (claude-multi-layout/triage))
-    ("triage-all"  (claude-multi-layout/triage-all))
-    ("task-triage" (claude-multi-layout/task-triage))
-    ("planning"    (claude-multi-layout/planning))
-    ("morning"     (claude-multi-layout/morning))
-    ("focus"       (claude-multi-layout/focus))
-    ("coding"      (claude-multi-layout/coding))
-    (_             (message "Unknown layout: %s" layout-name))))
+    ("agenda" (claude-multi-layout/agenda))
+    ("focus"  (claude-multi-layout/focus))
+    ("exit"   (claude-multi-layout/exit))
+    (_        (message "Unknown layout: %s" layout-name))))
 
 ;;;###autoload
 (defun claude-multi-layout/revert-files ()
