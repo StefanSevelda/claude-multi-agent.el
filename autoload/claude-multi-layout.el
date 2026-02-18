@@ -140,11 +140,15 @@ Reverts from disk to ensure fresh content."
 ;; ──────────────────────────────────────────────────────────────────────────────
 
 
-(defun claude-multi-layout--reset-kitty-layout ()
+(defun claude-multi-layout--reset-kitty-layout (&optional emacs-pct)
   "Re-position Kitty OS windows (Emacs left, Agents right).
+EMACS-PCT overrides the default screen-width percentage for Emacs.
 Calls `cma layout reset'.  Falls back gracefully if cma is unavailable."
   (when (and (fboundp 'cma--available-p) (cma--available-p))
-    (cma--call-raw "layout" "reset")))
+    (if emacs-pct
+        (cma--call-raw "layout" "reset"
+                       "--emacs-pct" (number-to-string emacs-pct))
+      (cma--call-raw "layout" "reset"))))
 
 ;;;###autoload
 (defun claude-multi-layout/reset-kitty ()
@@ -155,11 +159,12 @@ Calls `cma layout reset'.  Falls back gracefully if cma is unavailable."
         (message "%s" (or output "Layout reset")))
     (message "cma binary not found — cannot reset layout")))
 
-(defun claude-multi-layout--setup-layout (name &optional progress-height)
+(defun claude-multi-layout--setup-layout (name &optional progress-height emacs-pct)
   "Common setup for entering a layout.
 Saves window config (first time only), clears existing windows,
 resets Kitty positioning, and pins the progress buffer.
-NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25."
+NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25.
+EMACS-PCT overrides the default kitty screen-width percentage for Emacs."
   ;; Save pre-layout config (only if not already in a layout)
   (unless claude-multi-layout--pre-layout-config
     (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
@@ -168,7 +173,7 @@ NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25."
     (select-window (window-main-window)))
   (delete-other-windows)
   ;; Reset Kitty OS window positioning
-  (claude-multi-layout--reset-kitty-layout)
+  (claude-multi-layout--reset-kitty-layout emacs-pct)
   ;; Pin progress buffer at bottom
   (claude-multi-layout--ensure-progress-visible progress-height)
   ;; Track current layout
@@ -491,7 +496,7 @@ Bottom: progress buffer at 50% height."
   (claude-multi-layout--clear-time-overlays)
   (let* ((today-buf (claude-multi-layout--derive-today-buffer))
          (triage-buf (claude-multi-layout--find-or-create-org-file "task-triage.org")))
-    (claude-multi-layout--setup-layout 'focus 0.5)
+    (claude-multi-layout--setup-layout 'focus 0.5 40)
     ;; Top-left: today's schedule
     (switch-to-buffer today-buf)
     ;; Top-right: task triage
