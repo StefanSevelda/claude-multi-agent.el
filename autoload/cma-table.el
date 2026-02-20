@@ -19,7 +19,7 @@
 
 ;;; Table mode
 
-(defvar cma-table-mode-map
+(defconst cma-table-mode-map
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'cma-table/focus-agent)
     (define-key map (kbd "f") #'cma-table/focus-agent)
