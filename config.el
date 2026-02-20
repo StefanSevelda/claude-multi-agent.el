@@ -805,14 +805,15 @@ Keybindings:
          :desc "Review agent changes"   "r" #'claude-multi/review-agent-changes
          :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
          :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
-         :desc "Next diff file"         "n" #'claude-multi/next-diff-file))
-       (:prefix ("l" . "layout")
-        :desc "Agenda layout"           "a" #'claude-multi-layout/start-agenda
-        :desc "Focus layout"            "f" #'claude-multi-layout/focus
-        :desc "Exit layout"             "e" #'claude-multi-layout/exit
-        :desc "Switch layout"           "l" #'claude-multi-layout/switch
-        :desc "Revert files"            "r" #'claude-multi-layout/revert-files
-        :desc "Reset Kitty layout"     "R" #'claude-multi-layout/reset-kitty)))
+         :desc "Next diff file"         "n" #'claude-multi/next-diff-file)
+        :desc "Triage (agenda + agent)" "t" #'claude-multi-layout/start-agenda
+        (:prefix ("y" . "layout")
+         :desc "Agenda layout"           "a" #'claude-multi-layout/start-agenda
+         :desc "Focus layout"            "f" #'claude-multi-layout/focus
+         :desc "Exit layout"             "e" #'claude-multi-layout/exit
+         :desc "Switch layout"           "l" #'claude-multi-layout/switch
+         :desc "Revert files"            "r" #'claude-multi-layout/revert-files
+         :desc "Reset Kitty layout"     "R" #'claude-multi-layout/reset-kitty))))
 
 ;;;###autoload
 (defun claude-multi/debug-status-matching ()
