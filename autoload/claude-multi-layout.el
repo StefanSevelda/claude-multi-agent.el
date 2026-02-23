@@ -9,6 +9,7 @@
 ;; Layouts:
 ;;   - agenda:  week file (60%) | email/task/jira triage (stacked right)
 ;;   - focus:   today schedule | task-triage (top), progress (bottom 50%)
+;;   - project: neotree | magit-status (toggle: changed-files | magit-diff)
 ;;   - exit:    restore normal window configuration
 ;;
 ;; Helpers:
@@ -511,6 +512,176 @@ Bottom: progress buffer at 50% height."
     (claude-multi-layout--apply-week-file-indicator)
     (message "Layout: focus (today + triage + progress)")))
 
+;; ──────────────────────────────────────────────────────────────────────────────
+;; Project Layout — neotree + magit (toggleable status/diff + changed files)
+;; ──────────────────────────────────────────────────────────────────────────────
+
+(defvar claude-multi-layout--project-view 'status
+  "Current view in the project layout.
+\\='status — magit-status with neotree (default)
+\\='diff   — magit-diff-unstaged with changed-files sidebar")
+
+(defvar claude-multi-layout--project-dir nil
+  "Project directory used by the current project layout.")
+
+(defvar claude-multi-layout--project-changed-files-buffer-name
+  "*Changed Files*"
+  "Name of the sidebar buffer listing changed files in diff view.")
+
+(defvar claude-multi-layout--project-changed-files-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "RET") #'claude-multi-layout--project-show-file-diff)
+    (define-key map (kbd "q") #'claude-multi-layout/project-toggle-diff)
+    map)
+  "Keymap for the changed files sidebar buffer.")
+
+(define-derived-mode claude-multi-layout--project-changed-files-mode
+  special-mode "Changed-Files"
+  "Mode for the changed files sidebar in project layout.
+Press RET on a file to show its diff.  Press q to toggle back to status."
+  :keymap claude-multi-layout--project-changed-files-mode-map)
+
+;; Evil keybindings for changed-files sidebar
+(with-eval-after-load 'evil
+  (evil-define-key 'normal claude-multi-layout--project-changed-files-mode-map
+    (kbd "RET") #'claude-multi-layout--project-show-file-diff
+    (kbd "g d") #'claude-multi-layout/project-toggle-diff
+    (kbd "q")   #'claude-multi-layout/project-toggle-diff))
+
+(defun claude-multi-layout--build-changed-files-buffer (project-dir)
+  "Build a buffer listing git-changed files for PROJECT-DIR.
+Returns the buffer.  Each file is a clickable line that shows
+its diff in the adjacent window when RET is pressed."
+  (let* ((default-directory project-dir)
+         (changed (split-string
+                   (string-trim
+                    (shell-command-to-string
+                     "git diff --name-only HEAD 2>/dev/null; git diff --name-only --cached HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null"))
+                   "\n" t))
+         (changed (delete-dups changed))
+         (buf (get-buffer-create
+               claude-multi-layout--project-changed-files-buffer-name)))
+    (with-current-buffer buf
+      (let ((inhibit-read-only t))
+        (erase-buffer)
+        (insert (propertize "Changed Files\n" 'face 'bold))
+        (insert (make-string 14 ?─) "\n")
+        (if (null changed)
+            (insert "\n(no changes)")
+          (dolist (file (sort changed #'string<))
+            (insert (propertize file
+                                'face 'link
+                                'claude-multi-file file
+                                'mouse-face 'highlight)
+                    "\n"))))
+      (claude-multi-layout--project-changed-files-mode)
+      (goto-char (point-min))
+      (forward-line 2))
+    buf))
+
+(defun claude-multi-layout--project-show-file-diff ()
+  "Show the diff for the file at point in the adjacent window."
+  (interactive)
+  (let ((file (get-text-property (point) 'claude-multi-file)))
+    (unless file
+      (user-error "No file at point"))
+    (let* ((project-dir (or claude-multi-layout--project-dir default-directory))
+           (target-win (cl-find-if
+                        (lambda (w)
+                          (and (not (window-parameter w 'window-side))
+                               (not (eq w (selected-window)))))
+                        (window-list))))
+      (when target-win
+        (select-window target-win)
+        (let ((default-directory project-dir))
+          (magit-diff-unstaged nil (list (expand-file-name file project-dir))))))))
+
+;;;###autoload
+(defun claude-multi-layout/project ()
+  "Activate project layout: neotree (left) + magit status (right).
+Left: neotree file tree (~20% width).
+Right: magit-status for the project.
+Bottom: progress buffer at 20% height.
+Use `claude-multi-layout/project-toggle-diff' (or g d) to switch between
+magit-status / neotree and magit-diff / changed-files views."
+  (interactive)
+  (let ((project-dir (or (and (fboundp 'doom-project-root) (doom-project-root))
+                         (vc-root-dir)
+                         default-directory)))
+    (setq claude-multi-layout--project-dir project-dir)
+    (setq claude-multi-layout--project-view 'status)
+    (claude-multi-layout--setup-layout 'project 0.2)
+    ;; Open magit-status in the main window
+    (magit-status project-dir)
+    ;; Open neotree on the left for the project
+    (neotree-dir project-dir)
+    ;; Return focus to magit
+    (other-window 1)
+    (message "Layout: project (%s) — g d to toggle diff"
+             (abbreviate-file-name project-dir))))
+
+;;;###autoload
+(defun claude-multi-layout/project-toggle-diff ()
+  "Toggle project layout between status and diff views.
+Status view: neotree (full tree) + magit-status.
+Diff view: changed-files sidebar (only modified files) + magit-diff-unstaged."
+  (interactive)
+  (unless (eq claude-multi-layout--current 'project)
+    (user-error "Not in project layout — activate with SPC c m y p first"))
+  (let ((project-dir (or claude-multi-layout--project-dir default-directory)))
+    (pcase claude-multi-layout--project-view
+      ('status
+       ;; --- Switch to diff view ---
+       ;; Close neotree
+       (when (and (fboundp 'neo-global--window-exists-p)
+                  (neo-global--window-exists-p))
+         (neotree-hide))
+       ;; Switch main window to magit-diff-unstaged
+       (let ((main-win (cl-find-if
+                        (lambda (w) (not (window-parameter w 'window-side)))
+                        (window-list))))
+         (when main-win
+           (select-window main-win)
+           (let ((default-directory project-dir))
+             (magit-diff-unstaged))
+           ;; Open changed-files sidebar on the left
+           (let* ((changed-buf (claude-multi-layout--build-changed-files-buffer project-dir))
+                  (left-win (split-window main-win
+                                          (floor (* (window-width main-win) 0.2))
+                                          'left)))
+             (set-window-buffer left-win changed-buf))))
+       (setq claude-multi-layout--project-view 'diff)
+       (message "Project: diff view (RET on file → show diff, g d to toggle back)"))
+      ('diff
+       ;; --- Switch back to status view ---
+       ;; Kill the changed-files buffer and its window
+       (when-let ((cf-buf (get-buffer claude-multi-layout--project-changed-files-buffer-name)))
+         (when-let ((cf-win (get-buffer-window cf-buf)))
+           (delete-window cf-win))
+         (kill-buffer cf-buf))
+       ;; Switch main window back to magit-status
+       (let ((main-win (cl-find-if
+                        (lambda (w) (not (window-parameter w 'window-side)))
+                        (window-list))))
+         (when main-win
+           (select-window main-win)
+           (magit-status project-dir)))
+       ;; Reopen neotree
+       (neotree-dir project-dir)
+       ;; Focus magit
+       (other-window 1)
+       (setq claude-multi-layout--project-view 'status)
+       (message "Project: status view (g d to toggle diff)")))))
+
+(defun claude-multi-layout--project-toggle-diff-if-active ()
+  "Toggle diff view only when the project layout is active.
+Bound to `g d' in magit buffers — falls through gracefully
+when not in project layout."
+  (interactive)
+  (if (eq claude-multi-layout--current 'project)
+      (claude-multi-layout/project-toggle-diff)
+    (user-error "g d: not in project layout")))
+
 ;;;###autoload
 (defun claude-multi-layout/exit ()
   "Restore normal window configuration (exit layout mode).
@@ -532,19 +703,20 @@ Progress buffer stays visible if it was showing."
 ;;;###autoload
 (defun claude-multi-layout/switch (layout-name)
   "Switch to LAYOUT-NAME (string).
-Valid names: agenda, focus, exit."
+Valid names: agenda, focus, project, exit."
   (interactive
    (list (completing-read "Layout: "
-                          '("agenda" "focus" "exit")
+                          '("agenda" "focus" "project" "exit")
                           nil t)))
   ;; Stop focus timer when switching away from focus layout
   (when (and (eq claude-multi-layout--current 'focus)
              (not (string= layout-name "focus")))
     (claude-multi-layout--stop-time-indicator))
   (pcase layout-name
-    ("agenda" (claude-multi-layout/agenda))
-    ("focus"  (claude-multi-layout/focus))
-    ("exit"   (claude-multi-layout/exit))
+    ("agenda"  (claude-multi-layout/agenda))
+    ("focus"   (claude-multi-layout/focus))
+    ("project" (claude-multi-layout/project))
+    ("exit"    (claude-multi-layout/exit))
     (_        (message "Unknown layout: %s" layout-name))))
 
 ;;;###autoload

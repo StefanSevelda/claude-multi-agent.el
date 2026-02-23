@@ -810,10 +810,20 @@ Keybindings:
         (:prefix ("y" . "layout")
          :desc "Agenda layout"           "a" #'claude-multi-layout/start-agenda
          :desc "Focus layout"            "f" #'claude-multi-layout/focus
+         :desc "Project layout"          "p" #'claude-multi-layout/project
+         :desc "Toggle status/diff"      "d" #'claude-multi-layout/project-toggle-diff
          :desc "Exit layout"             "e" #'claude-multi-layout/exit
          :desc "Switch layout"           "l" #'claude-multi-layout/switch
          :desc "Revert files"            "r" #'claude-multi-layout/revert-files
          :desc "Reset Kitty layout"     "R" #'claude-multi-layout/reset-kitty))))
+
+;; Quick g d toggle for project layout in magit buffers
+(with-eval-after-load 'magit
+  (when (fboundp 'evil-define-key)
+    (evil-define-key 'normal magit-status-mode-map
+      (kbd "g d") #'claude-multi-layout--project-toggle-diff-if-active)
+    (evil-define-key 'normal magit-diff-mode-map
+      (kbd "g d") #'claude-multi-layout--project-toggle-diff-if-active)))
 
 ;;;###autoload
 (defun claude-multi/debug-status-matching ()
