@@ -5,23 +5,15 @@
 ;; Model Context Protocol (MCP) implementation for bidirectional communication
 ;; between Claude agents and Emacs. Provides tools for file operations, git,
 ;; agent management, and interactive features like diff review.
+;; All git operations delegate to the `cma git` subcommands.
 
 ;;; Code:
 
 (require 'cl-lib)
 (require 'json)
+(require 'cma-core)
 
 ;; Forward declarations
-(defvar claude-multi--agents)
-(declare-function claude-multi--get-agent-by-id "claude-multi-agents")
-(declare-function claude-multi-ws--send-message "claude-multi-websocket")
-(declare-function claude-multi--kitty-focus-window "claude-multi-agents")
-(declare-function claude-agent-id "claude-multi-agents")
-(declare-function claude-agent-status "claude-multi-agents")
-(declare-function claude-agent-working-directory "claude-multi-agents")
-(declare-function claude-agent-ediff-session "claude-multi-agents")
-(declare-function claude-multi-session--save "claude-multi-session")
-(declare-function claude-multi-session--list-sessions "claude-multi-session")
 (declare-function claude-multi-ediff--create-session "claude-multi-ediff")
 (declare-function claude-multi-ediff--get-changed-files "claude-multi-ediff")
 (declare-function claude-multi-ediff--show-diff "claude-multi-ediff")
@@ -43,7 +35,7 @@
 
 (defvar claude-multi--mcp-deferred-responses (make-hash-table :test 'equal)
   "Hash table storing deferred response callbacks.
-Key format: \"agent-id:request-id\" → callback function.")
+Key format: \"agent-id:request-id\" -> callback function.")
 
 ;;; Tool registration
 
@@ -51,8 +43,7 @@ Key format: \"agent-id:request-id\" → callback function.")
 (defun claude-multi-mcp--register-tool (tool-name handler-fn)
   "Register MCP tool TOOL-NAME with HANDLER-FN.
 HANDLER-FN should accept (agent-id params) and return result or error."
-  (puthash tool-name handler-fn claude-multi--mcp-tools)
-  (message "MCP tool registered: %s" tool-name))
+  (puthash tool-name handler-fn claude-multi--mcp-tools))
 
 ;;;###autoload
 (defun claude-multi-mcp--handle-request (agent-id request)
@@ -68,22 +59,18 @@ Returns response alist ready for JSON encoding."
           (if handler
               (let ((result (funcall handler agent-id params)))
                 (if (eq result 'deferred)
-                    ;; Handler deferred the response
                     `((jsonrpc . "2.0")
                       (id . ,request-id)
                       (result . ((status . "deferred")
                                 (message . "Request accepted, response will be sent when ready"))))
-                  ;; Normal response
                   `((jsonrpc . "2.0")
                     (id . ,request-id)
                     (result . ,result))))
-            ;; Tool not found
             `((jsonrpc . "2.0")
               (id . ,request-id)
               (error . ((code . -32601)
                        (message . ,(format "Method not found: %s" method)))))))
       (error
-       ;; Handler threw an error
        `((jsonrpc . "2.0")
          (id . ,request-id)
          (error . ((code . -32603)
@@ -92,8 +79,7 @@ Returns response alist ready for JSON encoding."
 ;;;###autoload
 (defun claude-multi-mcp--defer-response (agent-id request-id callback)
   "Defer response for REQUEST-ID from AGENT-ID.
-CALLBACK will be called with the result when ready.
-Callback signature: (lambda (result) ...) where result is an alist."
+CALLBACK will be called with the result when ready."
   (let ((key (format "%s:%s" agent-id request-id)))
     (puthash key callback claude-multi--mcp-deferred-responses)))
 
@@ -102,17 +88,18 @@ Callback signature: (lambda (result) ...) where result is an alist."
   "Complete deferred response for REQUEST-ID from AGENT-ID with RESULT."
   (let* ((key (format "%s:%s" agent-id request-id))
          (callback (gethash key claude-multi--mcp-deferred-responses)))
-    (if callback
-        (progn
-          (remhash key claude-multi--mcp-deferred-responses)
-          ;; Send response via WebSocket
-          (when (fboundp 'claude-multi-ws--send-message)
-            (claude-multi-ws--send-message
-             agent-id
-             `((jsonrpc . "2.0")
-               (id . ,request-id)
-               (result . ,result)))))
-      (message "No deferred callback found for %s" key))))
+    (when callback
+      (remhash key claude-multi--mcp-deferred-responses)
+      (funcall callback result))))
+
+;;; Helper to find agent by ID from cma list
+
+(defun claude-multi-mcp--find-agent (agent-id)
+  "Find agent with AGENT-ID from cma list --json."
+  (let ((agents (cma--call "list" "--json")))
+    (cl-find-if (lambda (a)
+                  (string= (alist-get 'session_id a) agent-id))
+                agents)))
 
 ;;; Built-in MCP Tools
 
@@ -166,44 +153,44 @@ Callback signature: (lambda (result) ...) where result is an alist."
       (error
        (signal 'error (list (format "Failed to list directory: %s" (error-message-string err))))))))
 
-;; Git operations
+;; Git operations — delegate to cma git subcommands
 
 (defun claude-multi-mcp--tool-git-status (agent-id _params)
   "Get git status for agent's working directory."
-  (let* ((agent (claude-multi--get-agent-by-id agent-id))
-         (default-directory (claude-agent-working-directory agent)))
+  (let* ((agent (claude-multi-mcp--find-agent agent-id))
+         (dir (alist-get 'cwd agent)))
     (condition-case err
-        (let ((output (shell-command-to-string "git status --porcelain")))
-          `((status . ,output)
-            (directory . ,default-directory)))
+        (let ((output (cma--call-raw "git" "status" "--dir" dir)))
+          `((status . ,(or output ""))
+            (directory . ,dir)))
       (error
        (signal 'error (list (format "Git command failed: %s" (error-message-string err))))))))
 
 (defun claude-multi-mcp--tool-git-diff (agent-id params)
   "Get git diff output. PARAMS: ((staged . t/nil) (file . \"path\"))."
-  (let* ((agent (claude-multi--get-agent-by-id agent-id))
-         (default-directory (claude-agent-working-directory agent))
+  (let* ((agent (claude-multi-mcp--find-agent agent-id))
+         (dir (alist-get 'cwd agent))
          (staged (cdr (assoc 'staged params)))
          (file (cdr (assoc 'file params)))
-         (cmd (format "git diff%s%s"
-                     (if staged " --staged" "")
-                     (if file (format " -- %s" file) ""))))
+         (args (list "git" "diff" "--dir" dir)))
+    (when staged
+      (setq args (append args (list "--staged"))))
+    (when file
+      (setq args (append args (list "--file" file))))
     (condition-case err
-        (let ((output (shell-command-to-string cmd)))
-          `((diff . ,output)
-            (directory . ,default-directory)))
+        (let ((output (apply #'cma--call-raw args)))
+          `((diff . ,(or output ""))
+            (directory . ,dir)))
       (error
        (signal 'error (list (format "Git diff failed: %s" (error-message-string err))))))))
 
-;; Agent operations
+;; Agent operations — delegate to cma CLI
 
 (defun claude-multi-mcp--tool-agent-focus (agent-id _params)
   "Focus the agent's kitty window."
   (condition-case err
       (progn
-        (when (fboundp 'claude-multi--kitty-focus-window)
-          (let ((agent (claude-multi--get-agent-by-id agent-id)))
-            (claude-multi--kitty-focus-window agent)))
+        (cma--call-raw "focus" agent-id)
         `((success . t)
           (agent-id . ,agent-id)))
     (error
@@ -211,22 +198,22 @@ Callback signature: (lambda (result) ...) where result is an alist."
 
 (defun claude-multi-mcp--tool-agent-status (agent-id _params)
   "Get status of the requesting agent."
-  (let ((agent (claude-multi--get-agent-by-id agent-id)))
+  (let ((agent (claude-multi-mcp--find-agent agent-id)))
     (if agent
         `((agent-id . ,agent-id)
-          (status . ,(symbol-name (claude-agent-status agent)))
-          (working-directory . ,(claude-agent-working-directory agent)))
+          (status . ,(alist-get 'status agent))
+          (working-directory . ,(alist-get 'cwd agent)))
       (error "Agent not found: %s" agent-id))))
 
 (defun claude-multi-mcp--tool-agent-list (_agent-id _params)
   "List all active agents."
-  (let ((agents-data
-         (mapcar (lambda (agent)
-                  `((id . ,(claude-agent-id agent))
-                    (status . ,(symbol-name (claude-agent-status agent)))))
-                claude-multi--agents)))
-    `((agents . ,(apply 'vector agents-data))
-      (count . ,(length claude-multi--agents)))))
+  (let ((agents (cma--call "list" "--json")))
+    `((agents . ,(apply 'vector
+                        (mapcar (lambda (a)
+                                  `((id . ,(alist-get 'session_id a))
+                                    (status . ,(alist-get 'status a))))
+                                (or agents '()))))
+      (count . ,(length (or agents '()))))))
 
 ;; Diff/review operations (deferred)
 
@@ -235,8 +222,7 @@ Callback signature: (lambda (result) ...) where result is an alist."
 PARAMS: ((file . \"path\") (description . \"...\") (request-id . \"...\"))."
   (let* ((request-id (cdr (assoc 'request-id params)))
          (file (cdr (assoc 'file params)))
-         (_description (or (cdr (assoc 'description params)) "Review changes"))
-         (agent (claude-multi--get-agent-by-id agent-id)))
+         (agent (claude-multi-mcp--find-agent agent-id)))
 
     (unless agent
       (error "Agent not found: %s" agent-id))
@@ -249,56 +235,51 @@ PARAMS: ((file . \"path\") (description . \"...\") (request-id . \"...\"))."
        (message "Diff review completed for %s: %s" agent-id result)))
 
     ;; Launch ediff review
-    (if file
-        ;; Single file review
-        (progn
-          (unless (claude-agent-ediff-session agent)
-            (claude-multi-ediff--create-session agent (list file)))
-          (claude-multi-ediff--set-mcp-request-id agent request-id)
-          (claude-multi-ediff--show-diff agent file))
-      ;; No file specified - review all changed files
-      (let ((changed-files (claude-multi-ediff--get-changed-files agent)))
-        (if (null changed-files)
-            (progn
-              ;; No changes - complete immediately
-              (claude-multi-mcp--complete-deferred-response
-               agent-id request-id
-               '((status . "no_changes")
-                 (accepted . [])
-                 (rejected . [])))
-              'deferred)
-          ;; Create session and start review
-          (claude-multi-ediff--create-session agent changed-files)
-          (claude-multi-ediff--set-mcp-request-id agent request-id)
-          (let* ((session (claude-agent-ediff-session agent))
-                 (first-file (car changed-files)))
-            (plist-put session :files-to-review (cdr changed-files))
-            (claude-multi-ediff--show-diff agent first-file)))))
+    (let ((dir (alist-get 'cwd agent)))
+      (if file
+          ;; Single file review
+          (progn
+            (claude-multi-ediff--create-session agent (list file))
+            (claude-multi-ediff--set-mcp-request-id request-id)
+            (claude-multi-ediff--show-diff file))
+        ;; No file specified - review all changed files
+        (let ((changed-files (claude-multi-ediff--get-changed-files dir)))
+          (if (null changed-files)
+              (progn
+                (claude-multi-mcp--complete-deferred-response
+                 agent-id request-id
+                 '((status . "no_changes")
+                   (accepted . [])
+                   (rejected . [])))
+                'deferred)
+            ;; Create session and start review
+            (claude-multi-ediff--create-session agent changed-files)
+            (claude-multi-ediff--set-mcp-request-id request-id)
+            (let* ((session claude-multi--ediff-session)
+                   (first-file (car changed-files)))
+              (plist-put session :files-to-review (cdr changed-files))
+              (claude-multi-ediff--show-diff first-file))))))
 
     ;; Return deferred marker
     'deferred))
 
-;; Session operations
+;; Session operations — delegate to cma CLI
 
 (defun claude-multi-mcp--tool-session-save (_agent-id _params)
   "Save current multi-agent session."
   (condition-case err
-      (if (fboundp 'claude-multi-session--save)
-          (let ((session-file (claude-multi-session--save)))
-            `((success . t)
-              (session-file . ,session-file)))
-        (error "Session persistence not available"))
+      (let ((output (cma--call-raw "session" "save")))
+        `((success . t)
+          (message . ,(or output "Session saved"))))
     (error
      (signal 'error (list (format "Failed to save session: %s" (error-message-string err)))))))
 
 (defun claude-multi-mcp--tool-session-list (_agent-id _params)
   "List available saved sessions."
   (condition-case err
-      (if (fboundp 'claude-multi-session--list-sessions)
-          (let ((sessions (claude-multi-session--list-sessions)))
-            `((sessions . ,(apply 'vector sessions))
-              (count . ,(length sessions))))
-        (error "Session persistence not available"))
+      (let ((sessions (cma--call "session" "list" "--json")))
+        `((sessions . ,(apply 'vector (or sessions '())))
+          (count . ,(length (or sessions '())))))
     (error
      (signal 'error (list (format "Failed to list sessions: %s" (error-message-string err)))))))
 

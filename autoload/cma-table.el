@@ -175,17 +175,28 @@ IS-CHILD adds indentation prefix for child agents."
       (cma--call-raw "focus" session-id)
       (message "Focused on agent %s" session-id))))
 
+(declare-function cma--maybe-cleanup-worktree "cma-commands")
+
 ;;;###autoload
 (defun cma-table/kill-agent ()
-  "Kill the agent at point."
+  "Kill the agent at point.
+After killing, offers to clean up associated worktree."
   (interactive)
   (let ((session-id (tabulated-list-get-id)))
     (if (not session-id)
         (message "No agent at point")
       (when (y-or-n-p (format "Kill agent %s? " session-id))
-        (cma--call-raw "kill" session-id)
-        (cma-table/refresh)
-        (message "Killed agent %s" session-id)))))
+        ;; Look up branch BEFORE killing (kill deletes status files)
+        (let* ((agents (cma--call "list" "--json"))
+               (agent (cl-find-if (lambda (a)
+                                    (string= (alist-get 'session_id a) session-id))
+                                  agents))
+               (branch (when agent (alist-get 'git_branch agent))))
+          (cma--call-raw "kill" session-id)
+          (message "Killed agent %s" session-id)
+          (when branch
+            (cma--maybe-cleanup-worktree branch))
+          (cma-table/refresh))))))
 
 ;;;###autoload
 (defun cma-table/rename-agent ()

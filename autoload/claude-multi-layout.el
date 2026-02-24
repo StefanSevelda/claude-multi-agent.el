@@ -17,6 +17,8 @@
 
 ;;; Code:
 
+(require 'cma-core)
+
 (defvar claude-multi-layout--current nil
   "Name of the currently active layout (symbol or nil).")
 
@@ -552,13 +554,9 @@ Press RET on a file to show its diff.  Press q to toggle back to status."
   "Build a buffer listing git-changed files for PROJECT-DIR.
 Returns the buffer.  Each file is a clickable line that shows
 its diff in the adjacent window when RET is pressed."
-  (let* ((default-directory project-dir)
-         (changed (split-string
-                   (string-trim
-                    (shell-command-to-string
-                     "git diff --name-only HEAD 2>/dev/null; git diff --name-only --cached HEAD 2>/dev/null; git ls-files --others --exclude-standard 2>/dev/null"))
-                   "\n" t))
-         (changed (delete-dups changed))
+  (let* ((changed (or (cma--call "git" "changed-files" "--all"
+                                     "--dir" project-dir "--json")
+                      '()))
          (buf (get-buffer-create
                claude-multi-layout--project-changed-files-buffer-name)))
     (with-current-buffer buf

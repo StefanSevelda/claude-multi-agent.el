@@ -4,10 +4,9 @@
 ;;; Commentary:
 ;; Configuration for Claude Multi-Agent Plugin
 ;; Manages multiple claude-code instances in parallel with worktree isolation
+;; All agent orchestration is handled by the cma Go CLI binary.
 
 ;;; Code:
-
-(message ">>> CLAUDE-MULTI: Starting to load config.el")
 
 (eval-and-compile
   (require 'subr-x))  ; For string-empty-p, string-trim
@@ -19,6 +18,12 @@
   :prefix "claude-multi-")
 
 ;;; Customization variables
+(defcustom claude-multi-default-model "sonnet"
+  "Default Claude model for new agents.
+Used as the initial selection when spawning agents."
+  :type '(choice (const "sonnet") (const "opus") (const "haiku"))
+  :group 'claude-multi)
+
 (defcustom claude-multi-worktree-location 'adjacent
   "Where to create worktrees for agents.
 \\='adjacent - Create in ../claude-worktrees/
@@ -85,26 +90,6 @@ Available methods: popup, markdown, modeline, sound"
                  (const :tag "Ask before closing" ask))
   :group 'claude-multi)
 
-(defcustom claude-multi-websocket-enabled t
-  "Enable WebSocket communication for real-time agent interaction.
-When enabled, agents can communicate with Emacs via WebSocket for MCP
-protocol support."
-  :type 'boolean
-  :group 'claude-multi)
-
-(defcustom claude-multi-websocket-fallback t
-  "Fall back to polling if WebSocket connection is lost.
-When enabled, agents will automatically switch to polling-based monitoring
-if their WebSocket connection disconnects."
-  :type 'boolean
-  :group 'claude-multi)
-
-(defcustom claude-multi-websocket-port-range '(10000 65535)
-  "Port range for WebSocket server.
-Server will try to bind to an available port in this range."
-  :type '(list integer integer)
-  :group 'claude-multi)
-
 (defcustom claude-multi-session-directory
   (expand-file-name "claude-multi-sessions" user-emacs-directory)
   "Directory for storing session files."
@@ -154,30 +139,6 @@ Server will try to bind to an available port in this range."
   :type 'string
   :group 'claude-multi)
 
-(defcustom claude-multi-use-org-tags t
-  "Whether to use org-mode tags in agent headlines.
-When enabled, agent status will be shown as org-mode tags
-\(e.g., :running:, :completed:)."
-  :type 'boolean
-  :group 'claude-multi)
-
-(defcustom claude-multi-use-cma-backend 'auto
-  "Whether to use the cma Go CLI backend for agent orchestration.
-\\='auto - Use cma if the binary is found on PATH (default)
-t       - Always use cma (error if not found)
-nil     - Always use legacy Elisp backend"
-  :type '(choice (const :tag "Auto-detect" auto)
-                 (const :tag "Always use cma" t)
-                 (const :tag "Always use legacy" nil))
-  :group 'claude-multi)
-
-(defun claude-multi--use-cma-p ()
-  "Return non-nil if the cma backend should be used."
-  (pcase claude-multi-use-cma-backend
-    ('auto (executable-find "cma"))
-    ('t t)
-    (_ nil)))
-
 ;; Forward declarations for cma modules
 (declare-function cma/spawn-agent "cma-commands")
 (declare-function cma/spawn-agent-with-worktree "cma-commands")
@@ -190,116 +151,25 @@ nil     - Always use legacy Elisp backend"
 (declare-function cma/list-sessions "cma-commands")
 (declare-function cma/delete-session "cma-commands")
 (declare-function cma/list-worktrees "cma-commands")
+(declare-function cma/worktree-create "cma-commands")
+(declare-function cma/worktree-remove "cma-commands")
 (declare-function cma-modeline--start "cma-modeline")
 
-;; Forward declarations for functions in other modules
-(declare-function claude-multi--stop-all-status-watches "claude-multi-progress")
-(declare-function claude-multi--setup-notifications "claude-multi-notifications")
-(declare-function claude-multi--teardown-notifications "claude-multi-notifications")
-(declare-function claude-multi--kill-agent "claude-multi-agents")
-(declare-function claude-multi--format-duration "claude-multi-agents")
-(declare-function claude-multi--get-status-icon "claude-multi-progress")
-(declare-function claude-multi--get-sessions-with-windows "claude-multi-status")
-(declare-function claude-agent-kitty-window-id "claude-multi-agents")
-(declare-function claude-agent-name "claude-multi-agents")
-(declare-function claude-agent-status "claude-multi-agents")
-(declare-function claude-multi--select-agent "claude-multi-agents")
-(declare-function claude-multi--create-agent "claude-multi-agents")
-(declare-function claude-multi--launch-agent "claude-multi-agents")
-(declare-function claude-agent-worktree-path "claude-multi-agents")
-(declare-function claude-agent-branch-name "claude-multi-agents")
-(declare-function claude-agent-created-at "claude-multi-agents")
-(declare-function claude-agent-completed-at "claude-multi-agents")
-(declare-function claude-agent-id "claude-multi-agents")
-(declare-function claude-multi--init-progress-buffer "claude-multi-progress")
-(declare-function claude-multi/cleanup-status-files "claude-multi-status")
-
-;; cl-lib setf accessors for struct
-;; Note: cl-defstruct uses 1-based indexing (index 0 is type tag)
-;; Count fields from 1: id=1, name=2, color=3, kitty-window-id=4, kitty-tab-id=5,
-;; context-buffer=6, status-timer=7, worktree-path=8, branch-name=9, working-directory=10
-(gv-define-setter claude-agent-worktree-path (val agent) `(aset ,agent 8 ,val))
-(gv-define-setter claude-agent-branch-name (val agent) `(aset ,agent 9 ,val))
-(gv-define-setter claude-agent-working-directory (val agent) `(aset ,agent 10 ,val))
-
-;; Global variables
-(defvar claude-multi--agents nil
-  "DEPRECATED: Legacy in-memory agent list.
-This variable is no longer the primary source of agent information.
-Use `claude-multi--get-agents-from-status-files' instead to discover
-agents from /tmp/claude-status/ files.
-
-Keeping this for backwards compatibility with code that may reference it,
-but it should not be relied upon as it can become stale or inconsistent
-with actual running Claude sessions.")
-
-(defvar claude-multi--agent-id-counter 0
-  "Counter for generating unique agent IDs.")
-
+;; Global variables (surviving)
 (defvar claude-multi--progress-buffer nil
   "Buffer for displaying agent progress.")
 
-(defvar claude-multi--session-start-time nil
-  "Timestamp when the current session started.")
-
-(defvar claude-multi--current-session-window-id nil
-  "Kitty OS window ID for the current session.
-Set when the first agent is spawned, used to target subsequent agents.")
-
-(defvar claude-multi--current-session-tab-ids nil
-  "List of kitty tab IDs for tabs created in the current session.
-Used for round-robin split placement or intelligent tab management.")
-
-;;; Load autoload modules NOW that all variables are defined
+;;; Load autoload modules
 (let ((autoload-dir (expand-file-name "autoload"
                                       (or (and load-file-name
-                                               ;; Resolve symlinks to get the real path
                                                (file-name-directory (file-truename load-file-name)))
                                           (and (boundp 'byte-compile-current-file)
                                                byte-compile-current-file
                                                (file-name-directory (file-truename byte-compile-current-file)))
                                           default-directory))))
-  (message ">>> CLAUDE-MULTI: Adding autoload directory to load-path: %s" autoload-dir)
   (add-to-list 'load-path autoload-dir)
 
-  ;; Use load instead of require for more reliable loading
-  (message ">>> CLAUDE-MULTI: Loading status module...")
-  (condition-case err
-      (load (expand-file-name "claude-multi-status.el" autoload-dir) nil 'nomessage)
-    (error (message ">>> CLAUDE-MULTI: Error loading status module: %S" err)))
-
-  (message ">>> CLAUDE-MULTI: Loading agents module...")
-  (condition-case err
-      (load (expand-file-name "claude-multi-agents.el" autoload-dir) nil 'nomessage)
-    (error (message ">>> CLAUDE-MULTI: Error loading agents module: %S" err)))
-
-  (message ">>> CLAUDE-MULTI: Loading progress module...")
-  (load (expand-file-name "claude-multi-progress.el" autoload-dir) nil 'nomessage)
-  (message ">>> CLAUDE-MULTI: Loading worktree module...")
-  (load (expand-file-name "claude-multi-worktree.el" autoload-dir) nil 'nomessage)
-  (message ">>> CLAUDE-MULTI: Loading notifications module...")
-  (load (expand-file-name "claude-multi-notifications.el" autoload-dir) nil 'nomessage)
-
-  ;; WebSocket support (optional - only loads if websocket package available)
-  (when (and claude-multi-websocket-enabled
-             (require 'websocket nil t))
-    (message ">>> CLAUDE-MULTI: Loading websocket module...")
-    (load (expand-file-name "claude-multi-websocket.el" autoload-dir) nil t))
-
-  ;; MCP Protocol
-  (message ">>> CLAUDE-MULTI: Loading MCP module...")
-  (load (expand-file-name "claude-multi-mcp.el" autoload-dir) nil t)
-
-  ;; Ediff Integration
-  (message ">>> CLAUDE-MULTI: Loading ediff module...")
-  (load (expand-file-name "claude-multi-ediff.el" autoload-dir) nil t)
-
-  ;; Session persistence
-  (message ">>> CLAUDE-MULTI: Loading session module...")
-  (load (expand-file-name "claude-multi-session.el" autoload-dir) nil t)
-
-  ;; CMA backend modules (always loaded; gated at runtime by claude-multi--use-cma-p)
-  (message ">>> CLAUDE-MULTI: Loading cma modules...")
+  ;; CMA backend modules (required)
   (condition-case err
       (progn
         (load (expand-file-name "cma-core.el" autoload-dir) nil 'nomessage)
@@ -308,458 +178,98 @@ Used for round-robin split placement or intelligent tab management.")
         (load (expand-file-name "cma-modeline.el" autoload-dir) nil 'nomessage))
     (error (message ">>> CLAUDE-MULTI: Error loading cma modules: %S" err)))
 
-  (message ">>> CLAUDE-MULTI: All modules loaded successfully")
+  ;; Surviving modules (ediff, mcp, layout)
+  (condition-case err
+      (progn
+        (load (expand-file-name "claude-multi-mcp.el" autoload-dir) nil t)
+        (load (expand-file-name "claude-multi-ediff.el" autoload-dir) nil t)
+        (load (expand-file-name "claude-multi-layout.el" autoload-dir) nil t))
+    (error (message ">>> CLAUDE-MULTI: Error loading surviving modules: %S" err)))
 
-  ;; Verify critical functions are available (legacy backend)
-  (unless (claude-multi--use-cma-p)
-    (unless (and (fboundp 'claude-multi--start-directory-watcher)
-                 (fboundp 'claude-multi--create-agent))
-      (warn "CLAUDE-MULTI: Some functions missing after load. Module: status=%s agents=%s"
-            (fboundp 'claude-multi--start-directory-watcher)
-            (fboundp 'claude-multi--create-agent))))
+  ;; Startup guard
+  (unless (executable-find "cma")
+    (warn "CLAUDE-MULTI: cma binary not found on PATH. Install it to use agent orchestration."))
 
-  ;; Start cma modeline if using cma backend
-  (when (and (claude-multi--use-cma-p) (fboundp 'cma-modeline--start))
-    (cma-modeline--start)
-    (message ">>> CLAUDE-MULTI: CMA backend active")))
+  ;; Start cma modeline
+  (when (fboundp 'cma-modeline--start)
+    (cma-modeline--start)))
 
-;; Interactive commands
-
-;;;###autoload
-(defun claude-multi/start-session ()
-  "Initialize a new multi-agent session and open the progress buffer."
-  (interactive)
-  (setq claude-multi--session-start-time (current-time))
-  (setq claude-multi--agents nil)
-  (setq claude-multi--agent-id-counter 0)
-  (setq claude-multi--current-session-window-id nil)
-  (setq claude-multi--current-session-tab-ids nil)
-  ;; Clean up stale status files older than 1 hour
-  (when (and (boundp 'claude-multi-status-directory)
-             (file-exists-p claude-multi-status-directory))
-    (let ((now (float-time))
-          (max-age-seconds 3600))  ; 1 hour
-      (dolist (file (directory-files claude-multi-status-directory t "^status-.*\\.json$"))
-        (let* ((file-mtime (float-time (nth 5 (file-attributes file))))
-               (age-seconds (- now file-mtime)))
-          (when (> age-seconds max-age-seconds)
-            (ignore-errors (delete-file file)))))))
-  ;; Setup notification system
-  (claude-multi--setup-notifications)
-  ;; Open progress buffer
-  (claude-multi/open-progress)
-  (message "Claude Multi-Agent session started. Use SPC c m a to spawn agents."))
+;; Interactive commands — thin wrappers calling cma-commands.el
 
 ;;;###autoload
 (defun claude-multi/spawn-agent ()
   "Spawn a new Claude agent in a kitty tab.
-Prompts for task description and working directory.
-Agent will cd into the directory before launching Claude."
+Prompts for task description and working directory."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/spawn-agent)
-    (unless claude-multi--session-start-time
-      (claude-multi/start-session))
-    ;; Ensure progress buffer exists
-    (unless (and claude-multi--progress-buffer
-                 (buffer-live-p claude-multi--progress-buffer))
-      (claude-multi/open-progress))
-    (let* ((task (read-string "Task description: "))
-           (directory (read-directory-name "Working directory: " default-directory nil t))
-           (agent (claude-multi--create-agent task)))
-      ;; Set working directory (agent will cd into it before launching Claude)
-      (setf (claude-agent-working-directory agent) (expand-file-name directory))
-      (push agent claude-multi--agents)
-      (claude-multi--launch-agent agent)
-      (message "Spawned agent: %s in %s" (claude-agent-name agent) directory))))
+  (cma/spawn-agent))
 
 ;;;###autoload
 (defun claude-multi/spawn-agent-with-worktree ()
   "Spawn agent with git worktree isolation in a kitty tab.
-Prompts for task description, directory, and branch name.
-Creates a new git worktree for isolated parallel development.
-Agent will cd into the worktree directory before launching Claude."
+Prompts for task description, directory, and branch name."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/spawn-agent-with-worktree)
-    (unless claude-multi--session-start-time
-      (claude-multi/start-session))
-    ;; Ensure progress buffer exists
-    (unless (and claude-multi--progress-buffer
-                 (buffer-live-p claude-multi--progress-buffer))
-      (claude-multi/open-progress))
-    (let* ((task (read-string "Task description: "))
-           (directory (read-directory-name "Worktree directory: " nil nil t))
-           (branch (read-string "Branch name: "))
-           (agent (claude-multi--create-agent task)))
-      ;; Set directory as worktree path
-      (setf (claude-agent-worktree-path agent) (expand-file-name directory))
-      ;; Set branch name to trigger worktree creation
-      (when (and branch (not (string-empty-p branch)))
-        (setf (claude-agent-branch-name agent) branch))
-      (push agent claude-multi--agents)
-      (claude-multi--launch-agent agent)
-      (message "Spawned agent: %s in worktree %s (branch: %s)"
-               (claude-agent-name agent) directory branch))))
+  (cma/spawn-agent-with-worktree))
 
 ;;;###autoload
 (defun claude-multi/open-progress ()
-  "Open the central progress tracking buffer."
+  "Open the central progress tracking buffer (table view)."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      ;; CMA backend: use cma-table-mode
-      (let ((buf (get-buffer-create claude-multi-progress-buffer-name)))
-        (setq claude-multi--progress-buffer buf)
-        (with-current-buffer buf
-          (unless (derived-mode-p 'cma-table-mode)
-            (cma-table-mode))
-          (tabulated-list-revert)
-          (unless (get-buffer-window buf)
-            (display-buffer buf))))
-    ;; Legacy backend
-    (setq claude-multi--progress-buffer
-          (get-buffer-create claude-multi-progress-buffer-name))
-    (with-current-buffer claude-multi--progress-buffer
-      (claude-multi-progress-mode)
-      ;; Load table module and initialize
-      (require 'claude-multi-table)
-      (claude-multi-table-mode)
-      (unless (get-buffer-window claude-multi--progress-buffer)
-        (display-buffer claude-multi--progress-buffer)))
-    (claude-multi--init-progress-buffer)
-    ;; Start directory watcher and refresh from status files
-    (when (fboundp 'claude-multi--start-directory-watcher)
-      (claude-multi--start-directory-watcher))
-    (when (fboundp 'claude-multi--refresh-progress-from-status-files)
-      (claude-multi--refresh-progress-from-status-files))))
-
-;;;###autoload
-(defun claude-multi/dashboard ()
-  "Show a dashboard with all agents discovered from status files."
-  (interactive)
-  (require 'claude-multi-status)
-  (let ((buf (get-buffer-create "*Claude Multi-Agent Dashboard.org*"))
-        (agents (claude-multi--get-agents-from-status-files)))
+  (let ((buf (get-buffer-create claude-multi-progress-buffer-name)))
+    (setq claude-multi--progress-buffer buf)
     (with-current-buffer buf
-      (read-only-mode -1)
-      (erase-buffer)
-      (insert "#+TITLE: Claude Multi-Agent Dashboard\n\n")
-      (if (null agents)
-          (insert "No active agents found in /tmp/claude-status/.\n")
-        (dolist (agent-plist agents)
-          (let ((display-name (plist-get agent-plist :display-name))
-                (session-id (plist-get agent-plist :session-id))
-                (status (plist-get agent-plist :status))
-                (kitty-window (plist-get agent-plist :kitty-window-id))
-                (directory (plist-get agent-plist :working-directory))
-                (branch (plist-get agent-plist :branch-name))
-                (timestamp (plist-get agent-plist :timestamp)))
-            (insert (format "* %s %s [%s]\n"
-                           (claude-multi--get-status-icon status)
-                           display-name
-                           (upcase (symbol-name status))))
-            (insert (format "- Session ID :: %s\n" session-id))
-            (when kitty-window
-              (insert (format "- Kitty Window :: %s\n" kitty-window)))
-            (insert (format "- Directory :: %s\n" (or directory "N/A")))
-            (when branch
-              (insert (format "- Branch :: %s\n" branch)))
-            (insert (format "- Last Updated :: %s\n" (or timestamp "N/A")))
-            (insert "\n"))))
-      (org-mode)
-      (read-only-mode 1)
-      (goto-char (point-min)))
-    (display-buffer buf)))
-
-;;; Drawer visibility core logic (testable, no org-mode dependencies)
-
-(defun claude-multi--find-agent-headlines ()
-  "Find all agent headline positions in the progress buffer.
-Returns a list of buffer positions where agent headlines start."
-  (when (and claude-multi--progress-buffer
-             (buffer-live-p claude-multi--progress-buffer))
-    (with-current-buffer claude-multi--progress-buffer
-      (save-excursion
-        (let ((positions nil))
-          (goto-char (point-min))
-          (while (re-search-forward "^\\*\\* " nil t)
-            (push (line-beginning-position) positions))
-          (nreverse positions))))))
-
-(defun claude-multi--apply-to-headlines (action-fn)
-  "Apply ACTION-FN to each agent headline in the progress buffer.
-ACTION-FN is called with point at the beginning of each headline."
-  (when (and claude-multi--progress-buffer
-             (buffer-live-p claude-multi--progress-buffer))
-    (with-current-buffer claude-multi--progress-buffer
-      (save-excursion
-        (dolist (pos (claude-multi--find-agent-headlines))
-          (goto-char pos)
-          (funcall action-fn))))))
-
-;;; Display functions (org-mode specific, thin wrappers)
-
-(defun claude-multi--org-show-subtree-at-point ()
-  "Show org subtree at point. Wrapper for org-mode function."
-  (when (fboundp 'org-show-subtree)
-    (org-show-subtree)))
-
-(defun claude-multi--org-hide-drawer-at-point ()
-  "Hide org drawer at point. Wrapper for org-mode function."
-  (when (fboundp 'org-hide-drawer-all)
-    (org-hide-drawer-all)))
-
-(defun claude-multi--org-cycle-at-point ()
-  "Cycle org visibility at point. Wrapper for org-mode function."
-  (when (fboundp 'org-cycle)
-    (org-cycle)))
-
-;;; User commands
-
-;;;###autoload
-(defun claude-multi/toggle-all-status-drawers ()
-  "Toggle visibility of all agent STATUS drawers in the progress buffer."
-  (interactive)
-  (claude-multi--apply-to-headlines #'claude-multi--org-cycle-at-point))
-
-;;;###autoload
-(defun claude-multi/show-all-status-drawers ()
-  "Show all agent STATUS drawers in the progress buffer."
-  (interactive)
-  (claude-multi--apply-to-headlines #'claude-multi--org-show-subtree-at-point))
-
-;;;###autoload
-(defun claude-multi/hide-all-status-drawers ()
-  "Hide all agent STATUS drawers in the progress buffer."
-  (interactive)
-  (claude-multi--apply-to-headlines #'claude-multi--org-hide-drawer-at-point))
-
-;; Note: claude-multi/send-input removed - user types directly in kitty terminal
+      (unless (derived-mode-p 'cma-table-mode)
+        (cma-table-mode))
+      (tabulated-list-revert)
+      (unless (get-buffer-window buf)
+        (display-buffer buf)))))
 
 ;;;###autoload
 (defun claude-multi/focus-agent ()
-  "Switch focus to a specific agent's kitty window.
-Works with both in-memory agents and persistent sessions from status files."
+  "Switch focus to a specific agent's kitty window."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/focus-agent)
-  ;; Get sessions from both in-memory agents and status files
-  (let* ((sessions (claude-multi--get-sessions-with-windows))
-         (in-memory-agents claude-multi--agents)
-         (all-sessions (append
-                       ;; Add in-memory agents first
-                       (mapcar (lambda (agent)
-                                (list :agent-name (claude-agent-name agent)
-                                     :window-id (claude-agent-kitty-window-id agent)
-                                     :status (symbol-name (claude-agent-status agent))
-                                     :display-name (claude-agent-name agent)
-                                     :source 'in-memory))
-                              in-memory-agents)
-                       ;; Add sessions from status files (avoiding duplicates)
-                       (cl-remove-if
-                        (lambda (session)
-                          (and (plist-get session :agent-name)
-                               (cl-find (plist-get session :agent-name)
-                                       in-memory-agents
-                                       :test #'string=
-                                       :key #'claude-agent-name)))
-                        sessions)))
-         ;; Filter to only sessions with window IDs
-         (focusable-sessions (cl-remove-if-not
-                             (lambda (session)
-                               (plist-get session :window-id))
-                             all-sessions)))
-    (if (null focusable-sessions)
-        (message "No agents with known window IDs found. Try spawning a new agent.")
-      ;; Let user select a session
-      (let* ((choices (mapcar (lambda (session)
-                               (let ((name (plist-get session :display-name))
-                                     (status (or (plist-get session :status) "unknown"))
-                                     (dir (plist-get session :directory)))
-                                 (cons (format "%s [%s]%s"
-                                             name status
-                                             (if dir (format " - %s" dir) ""))
-                                       session)))
-                             focusable-sessions))
-             (choice (completing-read "Focus on agent: " choices nil t))
-             (selected-session (cdr (assoc choice choices))))
-        (when selected-session
-          (let* ((window-id (plist-get selected-session :window-id))
-                 (listen-addr (or claude-multi-kitty-listen-address
-                                 (getenv "KITTY_LISTEN_ON")
-                                 "unix:/tmp/kitty-claude")))
-            (call-process-shell-command
-             (format "kitty @ --to=%s focus-window --match=id:%s"
-                    listen-addr window-id)
-             nil 0)
-            (message "Focused on %s (window %s)"
-                    (plist-get selected-session :display-name)
-                    window-id))))))))
+  (cma/focus-agent))
 
 ;;;###autoload
 (defun claude-multi/kill-agent ()
   "Kill a specific agent and cleanup resources."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/kill-agent)
-    (if (null claude-multi--agents)
-        (message "No active agents")
-      (let ((agent (claude-multi--select-agent claude-multi--agents "Kill agent: ")))
-        (when agent
-          (when (y-or-n-p (format "Really kill agent %s? " (claude-agent-name agent)))
-            (claude-multi--kill-agent agent)
-            (message "Killed agent: %s" (claude-agent-name agent))))))))
+  (cma/kill-agent))
 
 ;;;###autoload
 (defun claude-multi/kill-all-agents ()
   "Kill all agents and cleanup all worktrees."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/kill-all-agents)
-    (when (and claude-multi--agents
-               (y-or-n-p (format "Really kill all %d agents? " (length claude-multi--agents))))
-      (dolist (agent claude-multi--agents)
-        (claude-multi--kill-agent agent))
-      (setq claude-multi--agents nil)
-      ;; Teardown notification system
-      (claude-multi--teardown-notifications)
-      ;; Cleanup status tracking
-      (when (fboundp 'claude-multi--cleanup-status-tracking)
-        (claude-multi--cleanup-status-tracking))
-      ;; Close session OS window if it exists
-      (when claude-multi--current-session-window-id
-        (let ((listen-addr (or claude-multi-kitty-listen-address
-                               (getenv "KITTY_LISTEN_ON")
-                               "unix:/tmp/kitty-claude")))
-          (call-process-shell-command
-           (format "kitty @ --to=%s close-window --match=id:%s"
-                   listen-addr
-                   claude-multi--current-session-window-id)
-           nil 0))
-        (setq claude-multi--current-session-window-id nil))
-      (message "All agents killed"))))
-
-;; Progress buffer mode
-
-(defvar auto-revert-interval)  ; Defined in autorevert.el
-(declare-function org-indent-mode "org-indent")  ; Defined in org-indent.el
-
-(define-derived-mode claude-multi-progress-mode tabulated-list-mode "Claude-Multi-Progress"
-  "Major mode for Claude Multi-Agent progress tracking in table format.
-
-Keybindings:
-  \\[claude-multi/focus-agent-at-point] - Focus on agent at point
-  \\[claude-multi/rename-agent-at-point] - Rename agent at point"
-  (setq-local auto-revert-interval 0.5)
-  (auto-revert-mode 1)
-  ;; Don't need read-only mode - tabulated-list handles this
-  ;; Don't setup rename hooks - table mode handles renaming differently
-  )
-
-;; Add keybindings for progress mode
-(define-key claude-multi-progress-mode-map (kbd "f") 'claude-multi/focus-agent-at-point)
-(define-key claude-multi-progress-mode-map (kbd "r") 'claude-multi/rename-agent-at-point)
-
-;; Evil mode keybindings for progress mode
-(with-eval-after-load 'evil
-  (evil-define-key 'normal claude-multi-progress-mode-map
-    (kbd "f") 'claude-multi/focus-agent-at-point
-    (kbd "r") 'claude-multi/rename-agent-at-point))
-
-;; Note: claude-multi/kill-agent-at-point available via M-x but no default keybinding
-;; to avoid conflicts with evil mode
-
-;;; CMA dispatch wrappers for session and worktree commands
-;; These override the definitions from autoload modules when cma backend is active.
-;; For the legacy path, they call the internal functions from those modules directly.
-
-(declare-function claude-multi-session--save "claude-multi-session")
-(declare-function claude-multi-session--list-sessions "claude-multi-session")
-(declare-function claude-multi-session--restore "claude-multi-session")
-(declare-function claude-multi-session--delete-session "claude-multi-session")
-(declare-function claude-multi--list-worktrees "claude-multi-worktree")
+  (cma/kill-all-agents))
 
 ;;;###autoload
 (defun claude-multi/save-session ()
   "Save the current agent session."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/save-session)
-    (if (null claude-multi--agents)
-        (message "No active agents to save")
-      (if-let ((filepath (claude-multi-session--save)))
-          (message "Session saved: %s" (file-name-nondirectory filepath))
-        (message "Failed to save session")))))
+  (cma/save-session))
 
 ;;;###autoload
 (defun claude-multi/restore-session ()
   "Restore a saved agent session."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/restore-session)
-    (let ((sessions (claude-multi-session--list-sessions)))
-      (if (null sessions)
-          (message "No saved sessions found")
-        (let* ((session-id (completing-read "Restore session: " sessions nil t))
-               (restored-count (when session-id
-                                 (claude-multi-session--restore session-id))))
-          (if (and restored-count (> restored-count 0))
-              (message "Restored %d agent(s)" restored-count)
-            (message "Failed to restore session")))))))
+  (cma/restore-session))
 
 ;;;###autoload
 (defun claude-multi/list-sessions ()
   "List saved agent sessions."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/list-sessions)
-    (let ((sessions (claude-multi-session--list-sessions))
-          (buf (get-buffer-create "*Claude Multi-Agent Sessions*")))
-      (with-current-buffer buf
-        (let ((inhibit-read-only t))
-          (erase-buffer)
-          (if (null sessions)
-              (insert "No saved sessions found.\n")
-            (insert (format "Found %d session(s):\n\n" (length sessions)))
-            (dolist (s sessions)
-              (insert (format "- %s\n" s)))))
-        (special-mode)
-        (goto-char (point-min)))
-      (display-buffer buf))))
+  (cma/list-sessions))
 
 ;;;###autoload
 (defun claude-multi/delete-session ()
   "Delete a saved agent session."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/delete-session)
-    (let ((sessions (claude-multi-session--list-sessions)))
-      (if (null sessions)
-          (message "No saved sessions found")
-        (let ((session-id (completing-read "Delete session: " sessions nil t)))
-          (when (and session-id
-                     (y-or-n-p (format "Really delete session %s? " session-id)))
-            (if (claude-multi-session--delete-session session-id)
-                (message "Session deleted: %s" session-id)
-              (message "Failed to delete session"))))))))
+  (cma/delete-session))
 
 ;;;###autoload
 (defun claude-multi/list-worktrees ()
   "List git worktrees managed by agents."
   (interactive)
-  (if (claude-multi--use-cma-p)
-      (cma/list-worktrees)
-    (if-let ((worktrees (claude-multi--list-worktrees)))
-        (let ((buf (get-buffer-create "*Claude Worktrees*")))
-          (with-current-buffer buf
-            (let ((inhibit-read-only t))
-              (erase-buffer)
-              (dolist (w worktrees)
-                (insert (format "- %s\n" w))))
-            (special-mode)
-            (goto-char (point-min)))
-          (display-buffer buf))
-      (message "No git worktrees found or not in a git repository"))))
+  (cma/list-worktrees))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Progress Buffer Pinning (side-window)
@@ -785,18 +295,17 @@ Keybindings:
 (map! :leader
       (:prefix-map ("c" . "code")
        (:prefix ("m" . "claude-multi")
-        :desc "Start session"           "s" #'claude-multi/start-session
         :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
         :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
         :desc "Open progress"           "p" #'claude-multi/open-progress
-        :desc "Dashboard"               "d" #'claude-multi/dashboard
         :desc "Focus agent"             "f" #'claude-multi/focus-agent
         :desc "Kill agent"              "k" #'claude-multi/kill-agent
         :desc "Kill all"                "K" #'claude-multi/kill-all-agents
-        :desc "Cleanup status files"    "c" #'claude-multi/cleanup-status-files
-        :desc "Debug status matching"   "?" #'claude-multi/debug-status-matching
-        :desc "Export progress"         "e" #'claude-multi/export-progress
         :desc "List worktrees"          "l" #'claude-multi/list-worktrees
+        (:prefix ("W" . "worktrees")
+         :desc "Create worktree"         "c" #'cma/worktree-create
+         :desc "Remove worktree"         "r" #'cma/worktree-remove
+         :desc "List worktrees"          "l" #'claude-multi/list-worktrees)
         :desc "Save session"            "S" #'claude-multi/save-session
         :desc "Restore session"         "R" #'claude-multi/restore-session
         :desc "List sessions"           "L" #'claude-multi/list-sessions
@@ -825,54 +334,6 @@ Keybindings:
     (evil-define-key 'normal magit-diff-mode-map
       (kbd "g d") #'claude-multi-layout--project-toggle-diff-if-active)))
 
-;;;###autoload
-(defun claude-multi/debug-status-matching ()
-  "Show diagnostic information about agent-to-status-file matching."
-  (interactive)
-  (with-current-buffer (get-buffer-create "*Claude Status Diagnostics*")
-    (let ((inhibit-read-only t))
-      (erase-buffer)
-      (insert "=== Claude Multi-Agent Status Matching Diagnostics ===\n\n")
-
-      ;; Show agents
-      (insert (format "Total Agents: %d\n" (length claude-multi--agents)))
-      (insert (format "Pending Agents: %d\n" (length claude-multi--pending-agents)))
-      (insert (format "Watcher Running: %s\n\n"
-                      (if claude-multi--directory-watcher "YES" "NO")))
-
-      ;; Show each agent's state
-      (insert "=== Agents ===\n")
-      (dolist (agent claude-multi--agents)
-        (insert (format "\nAgent: %s\n" (claude-agent-name agent)))
-        (insert (format "  Status: %s\n" (claude-agent-status agent)))
-        (insert (format "  Session ID: %s\n"
-                        (or (claude-agent-session-id agent) "NOT SET")))
-        (insert (format "  Working Dir: %s\n"
-                        (or (claude-agent-working-directory agent) "N/A")))
-        (insert (format "  Worktree: %s\n"
-                        (or (claude-agent-worktree-path agent) "N/A")))
-        (insert (format "  In Pending: %s\n"
-                        (if (memq agent claude-multi--pending-agents) "YES" "NO"))))
-
-      ;; Show status files
-      (insert "\n=== Status Files ===\n")
-      (let ((files (directory-files claude-multi-status-directory t "^status-.*\\.json$")))
-        (if files
-            (dolist (file files)
-              (let ((data (claude-multi--read-status-file file)))
-                (when data
-                  (insert (format "\nFile: %s\n" (file-name-nondirectory file)))
-                  (insert (format "  Session ID: %s\n" (alist-get 'session_id data)))
-                  (insert (format "  CWD: %s\n" (alist-get 'cwd data)))
-                  (insert (format "  Normalized: %s\n"
-                                  (claude-multi--normalize-path
-                                   (alist-get 'cwd data)))))))
-          (insert "\nNo status files found in " claude-multi-status-directory))))
-
-    (goto-char (point-min))
-    (special-mode)
-    (display-buffer (current-buffer))))
-
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Auto-show progress buffer at startup
 ;; ──────────────────────────────────────────────────────────────────────────────
@@ -887,8 +348,6 @@ Keybindings:
 (if (boundp 'doom-after-init-hook)
     (add-hook 'doom-after-init-hook #'claude-multi--auto-show-progress)
   (add-hook 'emacs-startup-hook #'claude-multi--auto-show-progress))
-
-(message ">>> CLAUDE-MULTI: Finished loading config.el successfully")
 
 (provide 'claude-multi-config)
 ;;; config.el ends here
