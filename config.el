@@ -20,8 +20,9 @@
 ;;; Customization variables
 (defcustom claude-multi-default-model "sonnet"
   "Default Claude model for new agents.
-Used as the initial selection when spawning agents."
-  :type '(choice (const "sonnet") (const "opus") (const "haiku"))
+Common values: sonnet, opus (resolves to Opus 4.6 via ANTHROPIC_DEFAULT_OPUS_MODEL), haiku.
+Can also be a full Bedrock ARN for custom setups."
+  :type 'string
   :group 'claude-multi)
 
 (defcustom claude-multi-worktree-location 'adjacent
