@@ -20,8 +20,8 @@
 ;;; Customization variables
 (defcustom claude-multi-default-model "sonnet"
   "Default Claude model for new agents.
-Common values: sonnet, opus (resolves to Opus 4.6 via ANTHROPIC_DEFAULT_OPUS_MODEL), haiku.
-Can also be a full Bedrock ARN for custom setups."
+Model aliases: haiku (fast), sonnet (balanced, default), opus (advanced),
+opusplan (hybrid opus planning + sonnet execution)."
   :type 'string
   :group 'claude-multi)
 
