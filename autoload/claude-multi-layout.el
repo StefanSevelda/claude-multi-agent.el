@@ -18,6 +18,7 @@
 ;;; Code:
 
 (require 'cma-core)
+(require 'cma-table)
 
 (defvar claude-multi-layout--current nil
   "Name of the currently active layout (symbol or nil).")
@@ -52,6 +53,11 @@ HEIGHT defaults to 0.25."
               (or (bound-and-true-p claude-multi-progress-buffer-name)
                   "*Claude Multi-Agent Progress*")))
         (h (or height 0.25)))
+    ;; Activate table mode if not already set
+    (with-current-buffer buf
+      (unless (derived-mode-p 'cma-table-mode)
+        (cma-table-mode))
+      (tabulated-list-revert))
     ;; Kill any non-side window showing the buffer first
     (when-let ((existing (get-buffer-window buf t)))
       (unless (window-parameter existing 'window-side)
@@ -228,6 +234,7 @@ Progress buffer pinned at bottom."
                  "--task" "workview-triage-all"
                  "--dir" (expand-file-name "~/projects/workview")
                  "--prompt" "/workview:workview-triage-all"
+                 "--model" "sonnet"
                  "--json")
     (message "Agenda: cma not available — skipping agent spawn")))
 
