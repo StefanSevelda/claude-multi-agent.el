@@ -24,7 +24,7 @@ The agent matches to the session with the **highest score**.
 You spawn an agent in your home directory (`~/`), which has these status files:
 
 ```
-/tmp/claude-status/
+~/.cma/status/
 ├── status-abc123.json  # finished 2 hours ago → score: ~28,000
 ├── status-def456.json  # finished 5 minutes ago → score: 100,000
 └── status-ghi789.json  # running now → score: 10,000,000
@@ -112,7 +112,7 @@ Status files use ISO 8601 timestamps:
 ### Matching Process
 
 1. **Agent created** with working directory
-2. **Scan status files** in `/tmp/claude-status/`
+2. **Scan status files** in `~/.cma/status/`
 3. **Filter by CWD** - only consider matching directories
 4. **Score each candidate** - apply scoring algorithm
 5. **Select best match** - highest score wins
@@ -126,7 +126,7 @@ Status files use ISO 8601 timestamps:
 **Cause:** No active Claude session found in that directory.
 
 **Solution:**
-1. Verify a Claude session is running: `ls -la /tmp/claude-status/*.json`
+1. Verify a Claude session is running: `ls -la ~/.cma/status/*.json`
 2. Check the session's CWD matches agent's working directory
 3. Look for status files with recent timestamps
 
@@ -146,7 +146,7 @@ Status files use ISO 8601 timestamps:
 **Solution:**
 - The system automatically prefers recent/active sessions
 - Old files are harmless (just deprioritized)
-- Can manually clean: `rm /tmp/claude-status/status-*.json`
+- Can manually clean: `rm ~/.cma/status/status-*.json`
 
 ## Implementation
 

@@ -8,7 +8,7 @@
 
 ## Problem Summary
 
-Agents were showing "Waiting for status update..." indefinitely in the progress buffer instead of displaying actual status information from Claude Code sessions. Status files existed in `/tmp/claude-status/` with valid data, but the Emacs file-notify watcher was not detecting the updates.
+Agents were showing "Waiting for status update..." indefinitely in the progress buffer instead of displaying actual status information from Claude Code sessions. Status files existed in `~/.cma/status/` with valid data, but the Emacs file-notify watcher was not detecting the updates.
 
 ## Root Cause
 
@@ -89,7 +89,7 @@ Claude Agent (kitty terminal)
         ↓
 Python Hook (status-summary.py)
         ↓
-Atomic Write: /tmp/claude-status/status-{session-id}.json
+Atomic Write: ~/.cma/status/status-{session-id}.json
         ↓
 file-notify-add-watch (Emacs)
         ↓  'renamed event
@@ -109,7 +109,7 @@ Progress Buffer STATUS drawer (Org mode)
 - No connection management or reconnection logic
 - Works even if WebSocket fails or is disabled
 - Persistent - survives Emacs/agent restarts
-- Python hooks already write to `/tmp/claude-status/`
+- Python hooks already write to `~/.cma/status/`
 - Uses standard file-notify (inotify/kqueue)
 
 **Note**: WebSocket is used for MCP protocol (tool calls, diffs), NOT for status updates.

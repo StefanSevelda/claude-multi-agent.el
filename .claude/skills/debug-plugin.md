@@ -82,7 +82,7 @@ Use this skill when the user reports issues with the Claude Multi-Agent plugin n
 ### Step 4: Check Status Files
 
 ```bash
-ls -la /tmp/claude-status/
+ls -la ~/.cma/status/
 ```
 
 **Expected:** Recent `status-*.json` files (timestamps within last few minutes)
@@ -130,7 +130,7 @@ When status tracking works but display doesn't update:
   (dolist (agent claude-multi--agents)
     (when (claude-agent-session-id agent)
       (let* ((session-id (claude-agent-session-id agent))
-             (file (format "/tmp/claude-status/status-%s.json" session-id))
+             (file (format "~/.cma/status/status-%s.json" session-id))
              (data (when (file-exists-p file)
                      (with-temp-buffer
                        (insert-file-contents file)
@@ -210,7 +210,7 @@ Run this to get full diagnostic output:
 
   ;; 4. Status files
   (insert "\n4. STATUS FILES\n")
-  (let ((files (directory-files "/tmp/claude-status/" t "^status-.*\\.json$")))
+  (let ((files (directory-files "~/.cma/status/" t "^status-.*\\.json$")))
     (insert (format "   Count: %d\n" (length files)))
     (dolist (file (seq-take files 3))
       (insert (format "   - %s\n" (file-name-nondirectory file)))))
@@ -276,6 +276,6 @@ After applying any fix, verify:
 If none of these fixes work:
 1. Check Emacs version (requires 27+)
 2. Check kitty version and remote control config
-3. Verify `/tmp/claude-status/` is writable
+3. Verify `~/.cma/status/` is writable
 4. Check for conflicts with other packages (especially process/file watching packages)
 5. Try in `emacs -Q` to rule out config issues

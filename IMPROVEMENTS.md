@@ -152,7 +152,7 @@ def generate_status_json(state, cwd, context_info=None, git_info=None, model_inf
     # Read existing agent name from status file
     existing_agent_name = None
     if session_id:
-        status_dir = Path("/tmp/claude-status")
+        status_dir = Path.home() / ".cma" / "status"
         status_file = status_dir / f"status-{session_id}.json"
         if status_file.exists():
             try:
@@ -417,14 +417,14 @@ Add to `config.el`:
 
 ### Problem
 
-When agents spawn sub-agents using the Task tool, these sub-agents create their own status files in `/tmp/claude-status/`. This causes them to appear in the Emacs progress buffer alongside the main agents, creating clutter and confusion.
+When agents spawn sub-agents using the Task tool, these sub-agents create their own status files in `~/.cma/status/`. This causes them to appear in the Emacs progress buffer alongside the main agents, creating clutter and confusion.
 
 **Impact**: Medium - Makes the progress view cluttered and harder to navigate
 **Frequency**: Happens whenever agents use Task tool to spawn sub-agents
 
 ### Root Cause
 
-The progress buffer refresh logic in `autoload/claude-multi-progress.el` reads ALL status files from `/tmp/claude-status/` without distinguishing between:
+The progress buffer refresh logic in `autoload/claude-multi-progress.el` reads ALL status files from `~/.cma/status/` without distinguishing between:
 1. **Parent agents** - Launched directly by the user via `claude-multi/spawn-agent`
 2. **Sub-agents** - Spawned by other agents using the Task tool
 
@@ -455,7 +455,7 @@ Used to filter out sub-agents from the progress view.")
 ;; In autoload/claude-multi-progress.el
 (defun claude-multi--read-all-status-files ()
   "Read all parent agent status files, excluding sub-agents."
-  (let ((status-dir (expand-file-name "/tmp/claude-status")))
+  (let ((status-dir (expand-file-name "~/.cma/status")))
     (when (file-directory-p status-dir)
       (delq nil
             (mapcar
@@ -501,7 +501,7 @@ Then filter in Emacs:
 ```elisp
 (defun claude-multi--read-all-status-files ()
   "Read all parent agent status files, excluding sub-agents."
-  (let ((status-dir (expand-file-name "/tmp/claude-status")))
+  (let ((status-dir (expand-file-name "~/.cma/status")))
     (when (file-directory-p status-dir)
       (delq nil
             (mapcar
@@ -550,7 +550,7 @@ When t, all agents including sub-agents are displayed."
 
 ### Additional Considerations
 
-- **Session Persistence**: If Emacs restarts, the `claude-multi--parent-agent-ids` list is lost. Consider storing this in a file (e.g., `/tmp/claude-status/parent-agents.txt`)
+- **Session Persistence**: If Emacs restarts, the `claude-multi--parent-agent-ids` list is lost. Consider storing this in a file (e.g., `~/.cma/status/parent-agents.txt`)
 - **Cleanup**: Remove session IDs from the list when parent agents complete
 - **Debugging**: Add a toggle command `claude-multi/toggle-show-subagents` for debugging
 
@@ -601,7 +601,7 @@ When t, all agents including sub-agents are displayed."
 - [ ] Have that agent spawn a sub-agent using Task tool
 - [ ] Verify sub-agent does NOT appear in progress buffer
 - [ ] Verify parent agent still appears
-- [ ] Check that sub-agent status file exists in `/tmp/claude-status/`
+- [ ] Check that sub-agent status file exists in `~/.cma/status/`
 - [ ] Restart Emacs (if using persistence)
 - [ ] Verify filtering still works after restart
 - [ ] Test with multiple levels (agent → sub-agent → sub-sub-agent)

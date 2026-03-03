@@ -10,7 +10,7 @@ The current system maintains `claude-multi--agents` in memory, which:
 ## Solution: Status-File-Driven Architecture
 
 ### Single Source of Truth
-- `/tmp/claude-status/*.json` files written by Claude's Python hooks
+- `~/.cma/status/*.json` files written by Claude's Python hooks
 - Each running Claude session has exactly one status file
 - Progress buffer reads directly from status files
 - No persistent in-memory state required
@@ -28,7 +28,7 @@ The current system maintains `claude-multi--agents` in memory, which:
 #### 2. Agent Discovery from Status Files
 ```elisp
 (defun claude-multi--discover-agents-from-status ()
-  "Discover all running agents from /tmp/claude-status/*.json files.
+  "Discover all running agents from ~/.cma/status/*.json files.
   Returns list of agent-like plists with fields from status files."
   ...)
 ```

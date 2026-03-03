@@ -62,7 +62,7 @@ SPC h r r  (doom/reload)
 
 ---
 
-## Issue 2: Agent Status Not Syncing from /tmp/claude-status/ ✅ RESOLVED
+## Issue 2: Agent Status Not Syncing from ~/.cma/status/ ✅ RESOLVED
 
 ### Status: RESOLVED (2026-01-09)
 
@@ -74,7 +74,7 @@ SPC h r r  (doom/reload)
 ### Original Symptom (NOW FIXED)
 Agent status information was not being picked up from status files and synced into the session org mode buffer:
 - Progress buffer showed "Waiting for status update..."
-- Status files existed in `/tmp/claude-status/` with valid data
+- Status files existed in `~/.cma/status/` with valid data
 - Agent matched to session ID (diagnostic showed this)
 - But STATUS drawer in progress buffer never updated with actual status
 
@@ -89,7 +89,7 @@ Claude Agent (kitty terminal)
         ↓
 Python Hook (status-summary.py)
         ↓
-/tmp/claude-status/status-{session-id}.json  ← Write JSON file
+~/.cma/status/status-{session-id}.json  ← Write JSON file
         ↓
 Emacs file-notify-add-watch  ← Watch directory
         ↓
@@ -103,14 +103,14 @@ Progress buffer STATUS drawer update
 - No connection management/reconnection logic
 - Works even if WebSocket fails or is disabled
 - Persistent - survives Emacs/agent restarts
-- Python hooks already write to `/tmp/claude-status/`
+- Python hooks already write to `~/.cma/status/`
 - Uses standard file-notify (inotify/kqueue)
 
 **WebSocket is for MCP protocol** (tool calls, diffs), NOT for status updates.
 
 ### Expected Behavior
 After agent launches and status file is created:
-1. **Hook writes JSON**: `status-summary.py` writes to `/tmp/claude-status/status-{session-id}.json`
+1. **Hook writes JSON**: `status-summary.py` writes to `~/.cma/status/status-{session-id}.json`
 2. **File-notify detects**: `file-notify-add-watch` triggers on file change
 3. **JSON parsed**: Status data extracted from file
 4. **Agent matched**: By comparing `cwd` field in JSON to agent's working directory
@@ -135,7 +135,7 @@ After agent launches and status file is created:
 
 **Focus on file-based tracking pipeline:**
 
-1. ✅ Status files exist in `/tmp/claude-status/` - VERIFIED
+1. ✅ Status files exist in `~/.cma/status/` - VERIFIED
 2. ✅ Agent matches to session ID - VERIFIED (diagnostic shows match)
 3. ❓ File-notify watcher running? - NEED TO CHECK
 4. ❓ File-notify events triggering? - NEED TO CHECK
@@ -161,10 +161,10 @@ claude-multi--directory-watcher  ; Should return a descriptor, not nil
 (claude-multi--start-directory-watcher)
 
 ;; 2. Check what directory is being watched
-claude-multi-status-directory  ; Should be "/tmp/claude-status"
+claude-multi-status-directory  ; Should be "~/.cma/status"
 
 ;; 3. Verify directory exists and has files
-(directory-files "/tmp/claude-status" nil "^status-.*\\.json$")
+(directory-files (expand-file-name "~/.cma/status") nil "^status-.*\\.json$")
 ;; Should return list of status files
 
 ;; 4. Check if agent matched
@@ -172,7 +172,7 @@ claude-multi-status-directory  ; Should be "/tmp/claude-status"
 ;; Look for: Session ID set, "In Pending: NO"
 
 ;; 5. Test file-notify manually by touching a file
-(shell-command "touch /tmp/claude-status/test.json")
+(shell-command "touch ~/.cma/status/test.json")
 ;; Check *Messages* buffer for file-notify event
 
 ;; 6. Check status cache
@@ -186,7 +186,7 @@ claude-multi-status-directory  ; Should be "/tmp/claude-status"
 
 ;; 8. Manually process a status file (bypass file-notify)
 (claude-multi--process-status-file
-  "/tmp/claude-status/status-XXXXX.json")
+  "~/.cma/status/status-XXXXX.json")
 
 ;; 9. Manually trigger display update
 (let ((agent (car claude-multi--agents)))
@@ -194,7 +194,7 @@ claude-multi-status-directory  ; Should be "/tmp/claude-status"
 
 ;; 10. Check debug log for file-notify events
 (switch-to-buffer "*claude-multi-status-debug*")
-;; Should see: "File changed: /tmp/claude-status/status-XXXXX.json"
+;; Should see: "File changed: ~/.cma/status/status-XXXXX.json"
 ```
 
 ### Potential Causes

@@ -3,7 +3,7 @@
 
 ;;; Commentary:
 ;; Tabulated-list-mode view populated from `cma list --json` instead of
-;; reading /tmp/claude-status/ directly. Preserves column layout, keybindings,
+;; reading ~/.cma/status/ directly. Preserves column layout, keybindings,
 ;; parent-child indentation, and evil mode support from claude-multi-table.el.
 
 ;;; Code:

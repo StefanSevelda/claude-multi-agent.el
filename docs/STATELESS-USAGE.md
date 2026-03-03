@@ -13,7 +13,7 @@ Claude Multi-Agent now uses a **stateless architecture** where all agent informa
 
 ### Status Files (Single Source of Truth)
 
-When Claude runs, its Python hooks write status files to `/tmp/claude-status/`:
+When Claude runs, its Python hooks write status files to `~/.cma/status/`:
 
 ```json
 {
@@ -86,14 +86,14 @@ Shows summary of all running agents discovered from status files.
 ### Auto-Discovery on Progress Buffer Open
 
 The progress buffer automatically:
-1. Reads all files in `/tmp/claude-status/`
+1. Reads all files in `~/.cma/status/`
 2. Extracts session info (window ID, directory, branch, status)
 3. Displays them in organized org-mode format
 4. Updates in real-time as agents work
 
 ### Directory Watcher
 
-The progress buffer watches `/tmp/claude-status/` for changes:
+The progress buffer watches `~/.cma/status/` for changes:
 - New status files → New agents appear
 - Updated files → Agent info refreshes
 - Deleted files → Agents removed
@@ -171,7 +171,7 @@ The variable `claude-multi--agents` is now deprecated:
 Function: `claude-multi--refresh-progress-from-status-files`
 
 Called automatically when opening progress buffer:
-1. Reads all status files from `/tmp/claude-status/`
+1. Reads all status files from `~/.cma/status/`
 2. Clears and rebuilds agents section
 3. Inserts org-mode properties (including KITTY_WINDOW)
 4. Updates session statistics
@@ -182,7 +182,7 @@ Called automatically when opening progress buffer:
 
 **Check**: Do status files exist?
 ```bash
-ls -la /tmp/claude-status/
+ls -la ~/.cma/status/
 ```
 
 **Cause**: No Claude sessions running, or hooks not executing

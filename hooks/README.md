@@ -4,7 +4,7 @@ This directory contains Claude Code hooks that enable real-time status tracking 
 
 ## Files
 
-- **status-summary.py** - PostToolUse hook that writes status information to `/tmp/claude-status/status-{session_id}.json` after each tool use
+- **status-summary.py** - PostToolUse hook that writes status information to `~/.cma/status/status-{session_id}.json` after each tool use
 - **status-stop.py** - Stop hook that marks the session as finished when Claude stops
 
 ## Installation
@@ -67,7 +67,7 @@ If you prefer to install manually:
 
 ## Status File Format
 
-The hooks write JSON files to `/tmp/claude-status/` with the following structure:
+The hooks write JSON files to `~/.cma/status/` with the following structure:
 
 ```json
 {
@@ -117,14 +117,14 @@ The hooks write JSON files to `/tmp/claude-status/` with the following structure
 - Ensure Python 3 is available: `which python3`
 
 ### Status files not created
-- Check if directory exists: `ls -ld /tmp/claude-status/`
+- Check if directory exists: `ls -ld ~/.cma/status/`
 - Run hook manually: `echo '{}' | ~/.claude/hooks/status-summary.py`
 - Check hook output: The hooks log errors to stderr
 
 ### Emacs not showing updates
 - Verify file-notify is working: `emacs --batch --eval "(message \"%s\" (fboundp 'file-notify-add-watch))"`
 - Check status module is loaded: Open Emacs and run `M-x describe-variable RET claude-multi-status-directory`
-- Look for status files: `ls -l /tmp/claude-status/`
+- Look for status files: `ls -l ~/.cma/status/`
 
 ## Dependencies
 

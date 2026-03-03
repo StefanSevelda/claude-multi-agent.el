@@ -112,7 +112,7 @@ emacs -batch --eval '(progn
   (message "  Testing claude-multi--handle-directory-event...")
   (condition-case err
       (progn
-        (claude-multi--handle-directory-event (quote (nil created "/tmp/claude-status/status-test.json")))
+        (claude-multi--handle-directory-event (quote (nil created "~/.cma/status/status-test.json")))
         (message "    ✓ Executes without error"))
     (error
       (message "    ✗ Error: %s" err)
