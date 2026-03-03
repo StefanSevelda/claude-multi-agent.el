@@ -1,7 +1,7 @@
 #!/usr/bin/python3
 """
 Claude Agent Status Summary Hook
-Writes session-specific status JSON to /tmp/claude-status/ for Emacs integration.
+Writes session-specific status JSON to ~/.cma/status/ for Emacs integration.
 """
 
 import json
@@ -22,9 +22,9 @@ def load_hook_input():
 
 
 def get_state_file(session_id):
-    """Get path to session state file."""
-    state_dir = Path("/tmp/claude-status-hooks")
-    state_dir.mkdir(exist_ok=True)
+    """Get path to session state file (~/.cma/hooks/session-{id}.json)."""
+    state_dir = Path.home() / ".cma" / "hooks"
+    state_dir.mkdir(parents=True, exist_ok=True)
     return state_dir / f"session-{session_id}.json"
 
 
@@ -367,7 +367,7 @@ def generate_status_json(state, cwd, context_info=None, git_info=None, model_inf
     # (user may have renamed the agent via org property editing)
     existing_agent_name = None
     if session_id:
-        status_dir = Path("/tmp/claude-status")
+        status_dir = Path.home() / ".cma" / "status"
         status_file = status_dir / f"status-{session_id}.json"
         if status_file.exists():
             try:
@@ -420,9 +420,9 @@ def generate_status_json(state, cwd, context_info=None, git_info=None, model_inf
 
 
 def write_status_file(session_id, cwd, content):
-    """Write session-specific status JSON to /tmp directory."""
-    status_dir = Path("/tmp/claude-status")
-    status_dir.mkdir(exist_ok=True)
+    """Write session-specific status JSON to ~/.cma/status/."""
+    status_dir = Path.home() / ".cma" / "status"
+    status_dir.mkdir(parents=True, exist_ok=True)
     status_file = status_dir / f"status-{session_id}.json"
 
     # Add current working directory to the content

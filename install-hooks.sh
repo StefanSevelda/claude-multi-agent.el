@@ -212,9 +212,9 @@ echo
 echo "Installation complete!"
 echo
 echo "The hooks will now track Claude Code agent status in real-time."
-echo "Status files are written to: /tmp/claude-status/"
+echo "Status files are written to: ~/.cma/status/"
 echo
 echo "To verify the installation:"
 echo "  1. Run a Claude Code command that uses Write, Edit, or Bash tools"
-echo "  2. Check for status files: ls -l /tmp/claude-status/"
+echo "  2. Check for status files: ls -l ~/.cma/status/"
 echo

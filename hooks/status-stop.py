@@ -25,7 +25,7 @@ def update_status_file(session_id, cwd):
     Preserves existing fields (model_name, claude_mode, etc.) while
     updating the completion status.
     """
-    status_dir = Path("/tmp/claude-status")
+    status_dir = Path.home() / ".cma" / "status"
     status_file = status_dir / f"status-{session_id}.json"
 
     if not status_file.exists():
@@ -55,7 +55,7 @@ def update_status_file(session_id, cwd):
 
     # Write atomically
     try:
-        status_dir.mkdir(exist_ok=True)
+        status_dir.mkdir(parents=True, exist_ok=True)
         temp_file = status_file.with_suffix('.tmp')
         with open(temp_file, 'w') as f:
             json.dump(status_data, f, indent=2)
