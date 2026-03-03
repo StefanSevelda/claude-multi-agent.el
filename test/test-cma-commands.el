@@ -25,7 +25,12 @@
   (describe "cma/spawn-agent"
 
     (it "passes --model flag to cma CLI"
-      (spy-on 'read-string :and-return-value "test task")
+      (spy-on 'read-string :and-call-fake
+              (lambda (prompt &rest _)
+                (cond
+                 ((string-match-p "Task" prompt) "test task")
+                 ((string-match-p "name" prompt) "")
+                 (t ""))))
       (spy-on 'read-directory-name :and-return-value "/tmp/")
       (spy-on 'completing-read :and-return-value "opus")
       (spy-on 'cma--call :and-return-value
@@ -39,7 +44,12 @@
                 :to-equal "opus")))
 
     (it "includes --model in args list alongside other flags"
-      (spy-on 'read-string :and-return-value "my task")
+      (spy-on 'read-string :and-call-fake
+              (lambda (prompt &rest _)
+                (cond
+                 ((string-match-p "Task" prompt) "my task")
+                 ((string-match-p "name" prompt) "")
+                 (t ""))))
       (spy-on 'read-directory-name :and-return-value "/tmp/work/")
       (spy-on 'completing-read :and-return-value "haiku")
       (spy-on 'cma--call :and-return-value
@@ -50,7 +60,39 @@
         (expect (car call-args) :to-equal "spawn")
         (expect (member "--task" call-args) :to-be-truthy)
         (expect (member "--json" call-args) :to-be-truthy)
-        (expect (member "--model" call-args) :to-be-truthy))))
+        (expect (member "--model" call-args) :to-be-truthy)))
+
+    (it "passes --name flag when name is provided"
+      (spy-on 'read-string :and-call-fake
+              (lambda (prompt &rest _)
+                (cond
+                 ((string-match-p "Task" prompt) "named task")
+                 ((string-match-p "name" prompt) "backend")
+                 (t ""))))
+      (spy-on 'read-directory-name :and-return-value "/tmp/")
+      (spy-on 'completing-read :and-return-value "sonnet")
+      (spy-on 'cma--call :and-return-value
+              '((agent . ((name . "backend") (kitty_window_id . "10")))))
+      (cma/spawn-agent)
+      (let ((call-args (spy-calls-args-for 'cma--call 0)))
+        (expect (member "--name" call-args) :to-be-truthy)
+        (expect (nth (1+ (cl-position "--name" call-args :test #'string=)) call-args)
+                :to-equal "backend")))
+
+    (it "omits --name flag when name is empty"
+      (spy-on 'read-string :and-call-fake
+              (lambda (prompt &rest _)
+                (cond
+                 ((string-match-p "Task" prompt) "anon task")
+                 ((string-match-p "name" prompt) "")
+                 (t ""))))
+      (spy-on 'read-directory-name :and-return-value "/tmp/")
+      (spy-on 'completing-read :and-return-value "sonnet")
+      (spy-on 'cma--call :and-return-value
+              '((agent . ((name . "agent-a3f1") (kitty_window_id . "11")))))
+      (cma/spawn-agent)
+      (let ((call-args (spy-calls-args-for 'cma--call 0)))
+        (expect (member "--name" call-args) :not :to-be-truthy))))
 
   (describe "cma/spawn-agent-with-worktree"
 
@@ -60,6 +102,7 @@
                 (cond
                  ((string-match-p "Task" prompt) "wt task")
                  ((string-match-p "Branch" prompt) "feature/foo")
+                 ((string-match-p "name" prompt) "")
                  (t ""))))
       (spy-on 'read-directory-name :and-return-value "/tmp/")
       (spy-on 'completing-read :and-return-value "sonnet")

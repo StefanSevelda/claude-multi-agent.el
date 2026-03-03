@@ -14,13 +14,17 @@
 ;;;###autoload
 (defun cma/spawn-agent ()
   "Spawn a new Claude agent via cma CLI.
-Prompts for task description, working directory, and model."
+Prompts for task description, working directory, agent name, and model."
   (interactive)
   (let* ((task (read-string "Task description: "))
          (dir (read-directory-name "Working directory: " default-directory nil t))
+         (name (read-string "Agent name (empty for auto): "))
          (model (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
                                  nil nil nil nil claude-multi-default-model))
          (args (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
+         (args (if (not (string-empty-p name))
+                   (append args (list "--name" name))
+                 args))
          (args (if (and model (not (string-empty-p model)))
                    (append args (list "--model" model))
                  args))
@@ -35,16 +39,20 @@ Prompts for task description, working directory, and model."
 ;;;###autoload
 (defun cma/spawn-agent-with-worktree ()
   "Spawn a Claude agent with git worktree isolation via cma CLI.
-Prompts for task, directory, branch name, and model."
+Prompts for task, directory, branch name, agent name, and model."
   (interactive)
   (let* ((task (read-string "Task description: "))
          (dir (read-directory-name "Working directory: " default-directory nil t))
          (branch (read-string "Branch name: "))
+         (name (read-string "Agent name (empty for auto): "))
          (model (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
                                  nil nil nil nil claude-multi-default-model))
          (args (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
          (args (if (and branch (not (string-empty-p branch)))
                    (append args (list "--branch" branch))
+                 args))
+         (args (if (not (string-empty-p name))
+                   (append args (list "--name" name))
                  args))
          (args (if (and model (not (string-empty-p model)))
                    (append args (list "--model" model))
