@@ -33,7 +33,9 @@ Prompts for task description, working directory, agent name, and model."
         (let* ((agent (alist-get 'agent result))
                (name (alist-get 'name agent))
                (wid (alist-get 'kitty_window_id agent)))
-          (message "Spawned agent %s (window %s, model %s)" name wid model))
+          (message "Spawned agent %s (window %s, model %s)" name wid model)
+          (when (fboundp 'cma-table/refresh)
+            (cma-table/refresh)))
       (message "Spawn failed: %s" (or cma--last-error "unknown error")))))
 
 ;;;###autoload
@@ -61,7 +63,9 @@ Prompts for task, directory, branch name, agent name, and model."
     (if result
         (let* ((agent (alist-get 'agent result))
                (name (alist-get 'name agent)))
-          (message "Spawned agent %s with worktree (branch: %s, model: %s)" name branch model))
+          (message "Spawned agent %s with worktree (branch: %s, model: %s)" name branch model)
+          (when (fboundp 'cma-table/refresh)
+            (cma-table/refresh)))
       (message "Spawn failed: %s" (or cma--last-error "unknown error")))))
 
 ;;; Worktree cleanup helpers
