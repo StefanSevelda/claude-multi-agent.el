@@ -16,9 +16,9 @@
   "Spawn a new Claude agent via cma CLI.
 Prompts for task description, working directory, agent name, and model."
   (interactive)
-  (let* ((task (read-string "Task description: "))
+  (let* ((task (string-trim (read-string "Task description: ")))
          (dir (read-directory-name "Working directory: " default-directory nil t))
-         (name (read-string "Agent name (empty for auto): "))
+         (name (string-trim (read-string "Agent name (empty for auto): ")))
          (model (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
                                  nil nil nil nil claude-multi-default-model))
          (args (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
@@ -41,11 +41,14 @@ Prompts for task description, working directory, agent name, and model."
 ;;;###autoload
 (defun cma/spawn-agent-with-worktree ()
   "Spawn a Claude agent with git worktree isolation via cma CLI.
-Prompts for task, directory, branch name, agent name, and model."
+Prompts for task, directory, branch/worktree name, agent name, and model.
+When `claude-multi-worktree-location' is \\='claude, the prompt asks for a
+worktree name (passed as --branch to cma, which routes it to --worktree)."
   (interactive)
-  (let* ((task (read-string "Task description: "))
+  (let* ((task (string-trim (read-string "Task description: ")))
          (dir (read-directory-name "Working directory: " default-directory nil t))
-         (branch (read-string "Branch name: "))
+         (claude-mode (eq claude-multi-worktree-location 'claude))
+         (branch (string-trim (read-string (if claude-mode "Worktree name: " "Branch name: "))))
          (name (read-string "Agent name (empty for auto): "))
          (model (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
                                  nil nil nil nil claude-multi-default-model))
@@ -63,7 +66,10 @@ Prompts for task, directory, branch name, agent name, and model."
     (if result
         (let* ((agent (alist-get 'agent result))
                (name (alist-get 'name agent)))
-          (message "Spawned agent %s with worktree (branch: %s, model: %s)" name branch model)
+          (message "Spawned agent %s with worktree (%s: %s, model: %s)"
+                   name
+                   (if claude-mode "worktree" "branch")
+                   branch model)
           (when (fboundp 'cma-table/refresh)
             (cma-table/refresh)))
       (message "Spawn failed: %s" (or cma--last-error "unknown error")))))
@@ -256,7 +262,7 @@ After killing, offers to clean up associated worktrees."
   "Create a new git worktree via cma CLI.
 Prompts for a branch name."
   (interactive)
-  (let* ((branch (read-string "Branch name for worktree: "))
+  (let* ((branch (string-trim (read-string "Branch name for worktree: ")))
          (result (when (not (string-empty-p branch))
                    (cma--call "worktree" "create" branch "--json"))))
     (if result
@@ -288,6 +294,22 @@ Offers selection from existing worktrees and optional branch deletion."
                 (cma--call-raw "worktree" "remove" branch))
               (message "Removed worktree for %s%s" branch
                        (if delete-branch " (branch deleted)" "")))))))))
+
+;;;###autoload
+(defun cma/worktree-prune ()
+  "Prune merged/gone worktrees via cma CLI.
+Claude-managed worktrees are excluded unless --include-claude is passed."
+  (interactive)
+  (let ((output (cma--call-raw "worktree" "prune")))
+    (message "%s" (or output "No worktrees to prune"))))
+
+;;;###autoload
+(defun cma/worktree-clean ()
+  "Remove all Claude-managed worktrees (.claude/worktrees/) via cma CLI."
+  (interactive)
+  (when (y-or-n-p "Remove all Claude-managed worktrees? ")
+    (let ((output (cma--call-raw "worktree" "clean" "--force")))
+      (message "%s" (or output "No Claude worktrees to clean")))))
 
 (provide 'cma-commands)
 ;;; cma-commands.el ends here
