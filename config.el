@@ -28,9 +28,11 @@ opusplan (hybrid opus planning + sonnet execution)."
 (defcustom claude-multi-worktree-location 'adjacent
   "Where to create worktrees for agents.
 \\='adjacent - Create in ../claude-worktrees/
-\\='internal - Create in .git/worktrees/"
+\\='internal - Create in .git/worktrees/
+\\='claude   - Claude native (.claude/worktrees/); Claude manages lifecycle"
   :type '(choice (const :tag "Adjacent directory" adjacent)
-                 (const :tag "Internal .git/worktrees" internal))
+                 (const :tag "Internal .git/worktrees" internal)
+                 (const :tag "Claude native (.claude/worktrees)" claude))
   :group 'claude-multi)
 
 (defcustom claude-multi-claude-command "claude"
@@ -154,6 +156,8 @@ Available methods: popup, markdown, modeline, sound"
 (declare-function cma/list-worktrees "cma-commands")
 (declare-function cma/worktree-create "cma-commands")
 (declare-function cma/worktree-remove "cma-commands")
+(declare-function cma/worktree-prune "cma-commands")
+(declare-function cma/worktree-clean "cma-commands")
 (declare-function cma-modeline--start "cma-modeline")
 
 ;; Global variables (surviving)
@@ -306,7 +310,9 @@ Prompts for task description, directory, and branch name."
         (:prefix ("W" . "worktrees")
          :desc "Create worktree"         "c" #'cma/worktree-create
          :desc "Remove worktree"         "r" #'cma/worktree-remove
-         :desc "List worktrees"          "l" #'claude-multi/list-worktrees)
+         :desc "List worktrees"          "l" #'claude-multi/list-worktrees
+         :desc "Prune merged/gone"       "p" #'cma/worktree-prune
+         :desc "Clean Claude worktrees"  "C" #'cma/worktree-clean)
         :desc "Save session"            "S" #'claude-multi/save-session
         :desc "Restore session"         "R" #'claude-multi/restore-session
         :desc "List sessions"           "L" #'claude-multi/list-sessions
