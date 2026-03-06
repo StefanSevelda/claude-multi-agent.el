@@ -11,6 +11,12 @@
 
 (declare-function cma-table/refresh "cma-table")
 
+(defvar claude-multi-default-model "sonnet"
+  "Default model for spawning agents.  Overridden by config.el defcustom.")
+
+(defvar claude-multi-worktree-location 'adjacent
+  "Where to create worktrees.  Overridden by config.el defcustom.")
+
 ;;;###autoload
 (defun cma/spawn-agent ()
   "Spawn a new Claude agent via cma CLI.

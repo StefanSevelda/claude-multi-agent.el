@@ -17,6 +17,21 @@
 (defvar cma-table--refresh-interval 5
   "Seconds between automatic table refreshes.")
 
+(defface cma-table-face-permission
+  '((t :foreground "#FF6347"))
+  "Face for agents needing tool approval (permission_prompt)."
+  :group 'claude-multi)
+
+(defface cma-table-face-elicitation
+  '((t :foreground "#FFD700"))
+  "Face for agents asking a question (elicitation_dialog)."
+  :group 'claude-multi)
+
+(defface cma-table-face-idle
+  '((t :foreground "#00FF7F"))
+  "Face for agents that finished work (idle_prompt)."
+  :group 'claude-multi)
+
 ;;; Table mode
 
 (defconst cma-table-mode-map
@@ -105,7 +120,8 @@ IS-CHILD adds indentation prefix for child agents."
          (git-branch (alist-get 'git_branch agent))
          (context-pct (alist-get 'context_used agent))
          (duration (or (alist-get 'duration agent) ""))
-         (waiting (alist-get 'waiting_for_input agent))
+         (waiting (eq (alist-get 'waiting_for_input agent) t))
+         (notification-type (alist-get 'notification_type agent))
          ;; Build location string
          (dir-name (when (not (string-empty-p cwd))
                      (file-name-nondirectory (directory-file-name cwd))))
@@ -128,16 +144,40 @@ IS-CHILD adds indentation prefix for child agents."
          ;; Context percentage
          (ctx-str (if (and context-pct (> context-pct 0))
                       (format "%.1f%%" context-pct)
-                    "")))
+                    ""))
+         ;; Enhanced status text based on notification type
+         (display-status (if (and waiting notification-type)
+                             (pcase notification-type
+                               ("permission_prompt" "PERMISSION")
+                               ("elicitation_dialog" "QUESTION")
+                               ("idle_prompt" "IDLE")
+                               (_ (upcase status-str)))
+                           (upcase status-str)))
+         ;; Face for notification-based coloring
+         (row-face (when waiting
+                     (pcase notification-type
+                       ("permission_prompt" 'cma-table-face-permission)
+                       ("elicitation_dialog" 'cma-table-face-elicitation)
+                       ("idle_prompt" 'cma-table-face-idle)
+                       (_ nil)))))
     (list session-id
-          (vector icon
-                  window-id
-                  display-name
-                  location
-                  (upcase status-str)
-                  (upcase model)
-                  duration
-                  ctx-str))))
+          (if row-face
+              (vector icon
+                      (propertize window-id 'face row-face)
+                      (propertize display-name 'face row-face)
+                      (propertize location 'face row-face)
+                      (propertize display-status 'face row-face)
+                      (propertize (upcase model) 'face row-face)
+                      (propertize duration 'face row-face)
+                      (propertize ctx-str 'face row-face))
+            (vector icon
+                    window-id
+                    display-name
+                    location
+                    display-status
+                    (upcase model)
+                    duration
+                    ctx-str)))))
 
 ;;; Refresh timer
 
