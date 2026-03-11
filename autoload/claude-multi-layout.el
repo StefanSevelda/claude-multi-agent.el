@@ -7,10 +7,11 @@
 ;; pinned as a bottom side-window via display-buffer-alist.
 ;;
 ;; Layouts:
-;;   - agenda:  week file (60%) | email/task/jira triage (stacked right)
-;;   - focus:   today schedule | task-triage (top), progress (bottom 50%)
-;;   - project: neotree | magit-status (toggle: changed-files | magit-diff)
-;;   - exit:    restore normal window configuration
+;;   - agenda:       week file (45%) | triage.org (55%)
+;;   - focus:        today schedule (45%) | triage.org (55%) + progress (bottom)
+;;   - email-triage: email-triage.org (full width) + progress (bottom)
+;;   - project:      neotree | magit-status (toggle: changed-files | magit-diff)
+;;   - exit:         restore normal window configuration
 ;;
 ;; Helpers:
 ;;   - focus-buffer:  focus a specific file's window within the current layout
@@ -190,34 +191,20 @@ EMACS-PCT overrides the default kitty screen-width percentage for Emacs."
 
 ;;;###autoload
 (defun claude-multi-layout/agenda ()
-  "Activate agenda layout: weekly plan (left 60%) with triage stack (right).
-Right column shows email-triage (top), task-triage (middle), jira-triage (bottom).
+  "Activate agenda layout: weekly plan (left 45%) | triage.org (right 55%).
 Progress buffer pinned at bottom."
   (interactive)
-  (let* ((week-file (claude-multi-layout--current-week-file))
-         (week-buf  (claude-multi-layout--find-or-create-org-file week-file))
-         (email-buf (claude-multi-layout--find-or-create-org-file "email-triage.org"))
-         (task-buf  (claude-multi-layout--find-or-create-org-file "task-triage.org"))
-         (jira-buf  (claude-multi-layout--find-or-create-org-file "jira-triage.org")))
+  (let* ((week-file  (claude-multi-layout--current-week-file))
+         (week-buf   (claude-multi-layout--find-or-create-org-file week-file))
+         (triage-buf (claude-multi-layout--find-or-create-org-file "triage.org")))
     (claude-multi-layout--setup-layout 'agenda)
     ;; Left: weekly plan (full height)
     (switch-to-buffer week-buf)
-    ;; Right column at ~60% width
-    (let ((right-win (split-window-right (floor (* (window-width) 0.6)))))
+    ;; Right: triage.org at ~55% width
+    (let ((right-win (split-window-right (floor (* (window-width) 0.45)))))
       (select-window right-win)
-      ;; Top-right: email triage
-      (switch-to-buffer email-buf)
-      (claude-multi-layout--disable-olivetti-in-buffer email-buf)
-      ;; Middle-right: task triage (~33% of right column height)
-      (let ((mid-win (split-window-below (floor (* (window-height) 0.33)))))
-        (select-window mid-win)
-        (switch-to-buffer task-buf)
-        (claude-multi-layout--disable-olivetti-in-buffer task-buf)
-        ;; Bottom-right: jira triage (remaining ~50% of what's left)
-        (let ((bot-win (split-window-below (floor (* (window-height) 0.5)))))
-          (select-window bot-win)
-          (switch-to-buffer jira-buf)
-          (claude-multi-layout--disable-olivetti-in-buffer jira-buf))))
+      (switch-to-buffer triage-buf)
+      (claude-multi-layout--disable-olivetti-in-buffer triage-buf))
     ;; Return focus to weekly plan
     (select-window (get-buffer-window week-buf))
     (message "Layout: agenda (%s)" week-file)))
@@ -498,19 +485,19 @@ the caller (focus layout) creates overlays before starting the timer."
 ;;;###autoload
 (defun claude-multi-layout/focus ()
   "Activate focus layout for daily focused work.
-Top-left: today's schedule (derived read-only buffer).
-Top-right: task-triage.org for capturing ideas.
+Top-left: today's schedule (derived read-only buffer) at 45% width.
+Top-right: triage.org for task reference at 55% width.
 Bottom: progress buffer at 50% height."
   (interactive)
   ;; Clear any existing time indicator overlays from previous invocation
   (claude-multi-layout--clear-time-overlays)
   (let* ((today-buf (claude-multi-layout--derive-today-buffer))
-         (triage-buf (claude-multi-layout--find-or-create-org-file "task-triage.org")))
+         (triage-buf (claude-multi-layout--find-or-create-org-file "triage.org")))
     (claude-multi-layout--setup-layout 'focus 0.5 40)
     ;; Top-left: today's schedule
     (switch-to-buffer today-buf)
-    ;; Top-right: task triage
-    (let ((right-win (split-window-right (floor (* (window-width) 0.5)))))
+    ;; Top-right: task triage (left pane takes 45%)
+    (let ((right-win (split-window-right (floor (* (window-width) 0.45)))))
       (select-window right-win)
       (switch-to-buffer triage-buf)
       (claude-multi-layout--disable-olivetti-in-buffer triage-buf))
@@ -520,6 +507,17 @@ Bottom: progress buffer at 50% height."
     (claude-multi-layout--start-time-indicator)
     (claude-multi-layout--apply-week-file-indicator)
     (message "Layout: focus (today + triage + progress)")))
+
+;;;###autoload
+(defun claude-multi-layout/email-triage ()
+  "Activate email-triage layout: email-triage.org (full width) + progress bottom.
+Use for standalone inbox cleanup sessions."
+  (interactive)
+  (let* ((email-buf (claude-multi-layout--find-or-create-org-file "email-triage.org")))
+    (claude-multi-layout--setup-layout 'email-triage 0.3)
+    (switch-to-buffer email-buf)
+    (claude-multi-layout--disable-olivetti-in-buffer email-buf)
+    (message "Layout: email-triage (email-triage.org)")))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Project Layout — neotree + magit (toggleable status/diff + changed files)
@@ -708,28 +706,29 @@ Progress buffer stays visible if it was showing."
 ;;;###autoload
 (defun claude-multi-layout/switch (layout-name)
   "Switch to LAYOUT-NAME (string).
-Valid names: agenda, focus, project, exit."
+Valid names: agenda, focus, email-triage, project, exit."
   (interactive
    (list (completing-read "Layout: "
-                          '("agenda" "focus" "project" "exit")
+                          '("agenda" "focus" "email-triage" "project" "exit")
                           nil t)))
   ;; Stop focus timer when switching away from focus layout
   (when (and (eq claude-multi-layout--current 'focus)
              (not (string= layout-name "focus")))
     (claude-multi-layout--stop-time-indicator))
   (pcase layout-name
-    ("agenda"  (claude-multi-layout/agenda))
-    ("focus"   (claude-multi-layout/focus))
-    ("project" (claude-multi-layout/project))
-    ("exit"    (claude-multi-layout/exit))
-    (_        (message "Unknown layout: %s" layout-name))))
+    ("agenda"       (claude-multi-layout/agenda))
+    ("focus"        (claude-multi-layout/focus))
+    ("email-triage" (claude-multi-layout/email-triage))
+    ("project"      (claude-multi-layout/project))
+    ("exit"         (claude-multi-layout/exit))
+    (_              (message "Unknown layout: %s" layout-name))))
 
 ;;;###autoload
 (defun claude-multi-layout/revert-files ()
   "Revert all triage/planning org file buffers from disk.
 Useful after workview CLI regenerates files."
   (interactive)
-  (let ((files '("email-triage.org" "jira-triage.org" "task-triage.org"))
+  (let ((files '("triage.org" "email-triage.org"))
         (reverted 0))
     ;; Also check for current week file
     (push (claude-multi-layout--current-week-file) files)
