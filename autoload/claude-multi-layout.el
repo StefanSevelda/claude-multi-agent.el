@@ -276,14 +276,13 @@ indented continuation lines."
 (defun claude-multi-layout--derive-today-buffer ()
   "Extract today's schedule from the week file into a read-only derived buffer.
 Returns the buffer.  The buffer is not backed by a file — it is a
-transient mirror rendered from the `* Week Overview` section of the
-current week's planning file.  A `>>>` marker is placed beside the
-current time slot."
+transient mirror rendered from the `** Focus Blocks & Work Assignments`
+section of the current week's planning file."
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-path (expand-file-name week-file claude-multi-layout--org-base-dir))
          (today-buf (get-buffer-create claude-multi-layout--today-buffer-name))
          (now (claude-multi-layout--now))
-         (dow (format-time-string "%a" now))  ; e.g. "Mon", "Tue"
+         (dow-full (format-time-string "%A" now))  ; e.g. "Monday", "Tuesday"
          (now-hour (string-to-number (format-time-string "%H" now)))
          (now-min (string-to-number (format-time-string "%M" now))))
     (with-current-buffer today-buf
@@ -293,117 +292,40 @@ current time slot."
                         (format-time-string "%A, %B %d" now)))
         (if (not (file-exists-p week-path))
             (insert "No week file found. Run /workview:plan-week first.\n")
-          ;; Read the week file and extract today's column from the calendar grid
+          ;; Read the week file and extract today's section from Focus Blocks
           (let ((week-content (with-temp-buffer
                                 (insert-file-contents week-path)
                                 (buffer-string)))
-                (today-lines nil)
-                (in-grid nil)
-                (day-col nil))
-            ;; Find the "Week at a Glance" table and extract today's column
+                (day-content nil))
+            ;; Find the *** {Day} heading inside ** Focus Blocks & Work Assignments
             (with-temp-buffer
               (insert week-content)
               (goto-char (point-min))
-              ;; Find the grid table header row to locate today's column index
-              (when (re-search-forward "^|[[:space:]]+| " nil t)
-                (beginning-of-line)
-                (let* ((header-line (buffer-substring-no-properties
-                                     (point) (line-end-position)))
-                       (cols (split-string header-line "|" t))
-                       (col-idx nil))
-                  ;; Find which column matches today's day abbreviation
-                  (cl-loop for col in cols
-                           for i from 0
-                           when (string-match-p (regexp-quote dow) (string-trim col))
-                           do (setq col-idx i))
-                  (when col-idx
-                    (setq day-col col-idx)
-                    ;; Now walk each row and extract that column
-                    (forward-line 1)
-                    (while (and (not (eobp))
-                                (looking-at "^|"))
-                      (let* ((line (buffer-substring-no-properties
-                                     (point) (line-end-position)))
-                             (cells (split-string line "|" t)))
-                        (when (and (> (length cells) col-idx)
-                                   ;; Skip separator lines
-                                   (not (string-match-p "^-" (string-trim (nth 0 cells)))))
-                          (let* ((time-cell (string-trim (nth 0 cells)))
-                                 (day-cell (string-trim (nth col-idx cells)))
-                                 (slot-hour nil)
-                                 (slot-min nil)
-                                 (is-current nil))
-                            ;; Parse time from first column (e.g. "09:00", "09:30")
-                            (when (string-match "\\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\)" time-cell)
-                              (setq slot-hour (string-to-number (match-string 1 time-cell))
-                                    slot-min (string-to-number (match-string 2 time-cell)))
-                              ;; Check if this is the current time slot
-                              ;; Current = slot time <= now < slot time + 30min
-                              (let ((slot-total (+ (* slot-hour 60) slot-min))
-                                    (now-total (+ (* now-hour 60) now-min)))
-                                (setq is-current
-                                      (and (>= now-total slot-total)
-                                           (< now-total (+ slot-total 30))))))
-                            (push (list time-cell day-cell is-current) today-lines))))
-                      (forward-line 1))))))
-            ;; Render the extracted schedule
-            (if (null today-lines)
-                (insert "Could not extract today's schedule from the week file.\n"
-                        "The Week at a Glance table may not exist yet.\n")
-              (setq today-lines (nreverse today-lines))
-              (insert "| Time  | Block                  |\n")
-              (insert "|-------+------------------------|\n")
-              (let* ((now-line-start nil)
-                     (assignments-start nil)
-                     (dow-full (format-time-string "%A" now)))
-                ;; Build the time table
-                (dolist (entry today-lines)
-                  (let ((time-str (nth 0 entry))
-                        (block-str (nth 1 entry))
-                        (is-now (nth 2 entry))
-                        (line-start (point)))
-                    (insert (format "| %s | %-22s |\n"
-                                    time-str
-                                    block-str))
-                    (when is-now
-                      (setq now-line-start line-start))))
-                (insert "\n")
-                ;; Extract and insert focus block assignments
-                (let ((day-content
-                       (with-temp-buffer
-                         (insert week-content)
-                         (goto-char (point-min))
-                         (when (re-search-forward
-                                (format "^\\*\\*\\* %s" dow-full) nil t)
-                           (beginning-of-line)
-                           (let ((start (point))
-                                 (end (save-excursion
-                                        (forward-line 1)
-                                        (if (re-search-forward "^\\*\\*\\* " nil t)
-                                            (line-beginning-position)
-                                          (point-max)))))
-                             (buffer-substring-no-properties start end))))))
-                  (when day-content
-                    (setq assignments-start (point))
-                    (insert "** Focus Assignments\n\n")
-                    (insert day-content)))
-                ;; Enable org-mode BEFORE creating overlays (org-mode resets them)
+              (when (re-search-forward "^\\*\\* Focus Blocks" nil t)
+                (when (re-search-forward
+                       (format "^\\*\\*\\* %s" (regexp-quote dow-full)) nil t)
+                  (beginning-of-line)
+                  (let ((start (point))
+                        (end (save-excursion
+                               (forward-line 1)
+                               (if (re-search-forward "^\\*\\*\\* " nil t)
+                                   (line-beginning-position)
+                                 (point-max)))))
+                    (setq day-content
+                          (buffer-substring-no-properties start end))))))
+            (if (null day-content)
+                (insert (format "No focus blocks found for %s.\n" dow-full)
+                        "Run /workview:plan-week to generate the week plan.\n")
+              ;; Insert the day section and apply time indicator overlay
+              (let ((assignments-start (point)))
+                (insert day-content)
+                ;; Enable org-mode BEFORE creating overlays
                 (org-mode)
-                ;; Now apply all overlays after org-mode fontification
-                (when now-line-start
-                  (let ((ov (make-overlay now-line-start
-                                          (save-excursion
-                                            (goto-char now-line-start)
-                                            (line-end-position)))))
-                    (overlay-put ov 'face 'claude-multi-layout-now-indicator)
-                    (overlay-put ov 'priority 100)
-                    (overlay-put ov 'claude-multi-time-indicator t)
-                    (push ov claude-multi-layout--time-indicator-overlays)))
-                (when assignments-start
-                  (claude-multi-layout--apply-assignment-indicator
-                   assignments-start now-hour now-min))))))
-        (setq buffer-read-only t)
-        (goto-char (point-min))))
+                ;; Apply time indicator to the current block
+                (claude-multi-layout--apply-assignment-indicator
+                 assignments-start now-hour now-min))))))
+      (setq buffer-read-only t)
+      (goto-char (point-min)))
     today-buf))
 
 (defun claude-multi-layout--clear-time-overlays ()
@@ -414,33 +336,31 @@ current time slot."
   (setq claude-multi-layout--time-indicator-overlays nil))
 
 (defun claude-multi-layout--apply-week-file-indicator ()
-  "Apply the time indicator overlay to the week file's calendar grid.
-Finds today's current time slot row in the Week at a Glance table
-and highlights it."
+  "Apply the time indicator overlay to today's focus block in the week file.
+Finds the current focus block line under today's `*** {Day}` heading
+in the `** Focus Blocks & Work Assignments` section and highlights it."
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-path (expand-file-name week-file claude-multi-layout--org-base-dir))
          (week-buf (find-buffer-visiting week-path))
          (now (claude-multi-layout--now))
+         (dow-full (format-time-string "%A" now))
          (now-hour (string-to-number (format-time-string "%H" now)))
-         (now-min (string-to-number (format-time-string "%M" now)))
-         ;; Snap to 30-min slot
-         (slot-time (format "%02d:%02d" now-hour (* (/ now-min 30) 30))))
+         (now-min (string-to-number (format-time-string "%M" now))))
     (when (and week-buf (buffer-live-p week-buf))
       (with-current-buffer week-buf
         (save-excursion
           (goto-char (point-min))
-          ;; Find the Week at a Glance section
-          (when (re-search-forward "^\\*\\* Week at a Glance" nil t)
-            ;; Find the row matching the current time slot
+          (when (re-search-forward "^\\*\\* Focus Blocks" nil t)
             (when (re-search-forward
-                   (format "^|[[:space:]]*%s[[:space:]]*|" (regexp-quote slot-time))
-                   nil t)
-              (beginning-of-line)
-              (let ((ov (make-overlay (point) (line-end-position))))
-                (overlay-put ov 'face 'claude-multi-layout-now-indicator)
-                (overlay-put ov 'priority 100)
-                (overlay-put ov 'claude-multi-time-indicator t)
-                (push ov claude-multi-layout--time-indicator-overlays)))))))))
+                   (format "^\\*\\*\\* %s" (regexp-quote dow-full)) nil t)
+              (let ((section-start (point))
+                    (section-end (save-excursion
+                                   (forward-line 1)
+                                   (if (re-search-forward "^\\*\\*\\* " nil t)
+                                       (line-beginning-position)
+                                     (point-max)))))
+                (claude-multi-layout--apply-assignment-indicator
+                 section-start now-hour now-min))))))))))
 
 (defun claude-multi-layout--update-time-indicator ()
   "Refresh the time indicator in both the today buffer and week file.
