@@ -92,13 +92,13 @@ Keybindings:
          ;; Sort by window ID then by session start time
          (sorted (sort (copy-sequence (or agents '()))
                        (lambda (a b)
-                         (let ((win-a (or (alist-get 'window_id a) ""))
-                               (win-b (or (alist-get 'window_id b) ""))
+                         (let ((id-a (or (alist-get 'agent_id a) ""))
+                               (id-b (or (alist-get 'agent_id b) ""))
                                (time-a (or (alist-get 'session_started a) ""))
                                (time-b (or (alist-get 'session_started b) "")))
-                           (if (string= win-a win-b)
+                           (if (string= id-a id-b)
                                (string< time-a time-b)
-                             (string< win-a win-b))))))
+                             (string< id-a id-b))))))
          (prev-window nil)
          (entries nil))
     (dolist (agent sorted)
@@ -111,12 +111,14 @@ Keybindings:
 (defun cma-table--agent-to-entry (agent is-child)
   "Convert AGENT alist to tabulated-list entry.
 IS-CHILD adds indentation prefix for child agents."
-  (let* ((session-id (alist-get 'session_id agent))
+  (let* ((agent-id (or (alist-get 'agent_id agent)
+                       (alist-get 'session_id agent) ; legacy fallback
+                       "unknown"))
          (name (or (alist-get 'name agent) ""))
          (status-str (or (alist-get 'status agent) "unknown"))
          (cwd (or (alist-get 'cwd agent) ""))
          (model (or (alist-get 'model_name agent) ""))
-         (window-id (or (alist-get 'window_id agent) "—"))
+         (pane-id (or (alist-get 'pane_id agent) "—"))
          (git-branch (alist-get 'git_branch agent))
          (context-pct (alist-get 'context_used agent))
          (duration (or (alist-get 'duration agent) ""))
@@ -160,10 +162,10 @@ IS-CHILD adds indentation prefix for child agents."
                        ("elicitation_dialog" 'cma-table-face-elicitation)
                        ("idle_prompt" 'cma-table-face-idle)
                        (_ nil)))))
-    (list session-id
+    (list agent-id  ; agent_id is the stable primary key from launch time
           (if row-face
               (vector icon
-                      (propertize window-id 'face row-face)
+                      (propertize pane-id 'face row-face)
                       (propertize display-name 'face row-face)
                       (propertize location 'face row-face)
                       (propertize display-status 'face row-face)
@@ -171,7 +173,7 @@ IS-CHILD adds indentation prefix for child agents."
                       (propertize duration 'face row-face)
                       (propertize ctx-str 'face row-face))
             (vector icon
-                    window-id
+                    pane-id
                     display-name
                     location
                     display-status
@@ -209,11 +211,11 @@ IS-CHILD adds indentation prefix for child agents."
 (defun cma-table/focus-agent ()
   "Focus on the agent at point."
   (interactive)
-  (let ((session-id (tabulated-list-get-id)))
-    (if (not session-id)
+  (let ((agent-id (tabulated-list-get-id)))
+    (if (not agent-id)
         (message "No agent at point")
-      (cma--call-raw "focus" session-id)
-      (message "Focused on agent %s" session-id))))
+      (cma--call-raw "focus" agent-id)
+      (message "Focused on agent %s" agent-id))))
 
 (declare-function cma--maybe-cleanup-worktree "cma-commands")
 
@@ -222,18 +224,18 @@ IS-CHILD adds indentation prefix for child agents."
   "Kill the agent at point.
 After killing, offers to clean up associated worktree."
   (interactive)
-  (let ((session-id (tabulated-list-get-id)))
-    (if (not session-id)
+  (let ((agent-id (tabulated-list-get-id)))
+    (if (not agent-id)
         (message "No agent at point")
-      (when (y-or-n-p (format "Kill agent %s? " session-id))
-        ;; Look up branch BEFORE killing (kill deletes status files)
+      (when (y-or-n-p (format "Kill agent %s? " agent-id))
+        ;; Look up branch BEFORE killing (kill removes the registry entry)
         (let* ((agents (cma--call "list" "--json"))
                (agent (cl-find-if (lambda (a)
-                                    (string= (alist-get 'session_id a) session-id))
+                                    (string= (alist-get 'agent_id a) agent-id))
                                   agents))
                (branch (when agent (alist-get 'git_branch agent))))
-          (cma--call-raw "kill" session-id)
-          (message "Killed agent %s" session-id)
+          (cma--call-raw "kill" agent-id)
+          (message "Killed agent %s" agent-id)
           (when branch
             (cma--maybe-cleanup-worktree branch))
           (cma-table/refresh))))))
@@ -242,12 +244,12 @@ After killing, offers to clean up associated worktree."
 (defun cma-table/rename-agent ()
   "Rename the agent at point."
   (interactive)
-  (let ((session-id (tabulated-list-get-id)))
-    (if (not session-id)
+  (let ((agent-id (tabulated-list-get-id)))
+    (if (not agent-id)
         (message "No agent at point")
       (let ((new-name (read-string "New name: ")))
         (when (not (string-empty-p new-name))
-          (cma--call-raw "rename" session-id new-name)
+          (cma--call-raw "rename" agent-id new-name)
           (cma-table/refresh)
           (message "Renamed to %s" new-name))))))
 
