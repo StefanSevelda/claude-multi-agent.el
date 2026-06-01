@@ -254,16 +254,22 @@ Prompts for task description, directory, and branch name."
 ;; Progress Buffer Pinning (side-window)
 ;; ──────────────────────────────────────────────────────────────────────────────
 
-;; Allow 1 bottom side-window slot for the progress buffer
-(setq window-sides-slots '(nil nil 1 nil))
-
-;; Pin progress buffer as a dedicated bottom side-window that survives delete-other-windows
-(add-to-list 'display-buffer-alist
-  `(,(regexp-quote (or (bound-and-true-p claude-multi-progress-buffer-name)
-                       "*Claude Multi-Agent Progress*"))
-    (display-buffer-in-side-window)
-    (side . bottom) (slot . 0) (window-height . 0.25)
-    (preserve-size . (nil . t)) (dedicated . t)))
+;; Pin the progress buffer at the bottom.  Under Doom, register it with the
+;; popup system: a raw `display-buffer-alist' entry gets silently clobbered when
+;; `+popup-mode' rebuilds that variable from its own managed rule set, leaving
+;; the buffer as a transient window that `delete-other-windows' destroys on every
+;; layout switch.  Outside Doom, fall back to a dedicated bottom side-window.
+(if (fboundp 'set-popup-rule!)
+    (set-popup-rule! "^\\*Claude Multi-Agent Progress"
+      :side 'bottom :size 0.25 :ttl nil :quit nil :select nil :modeline t)
+  ;; Allow 1 bottom side-window slot for the progress buffer
+  (setq window-sides-slots '(nil nil 1 nil))
+  (add-to-list 'display-buffer-alist
+    `(,(regexp-quote (or (bound-and-true-p claude-multi-progress-buffer-name)
+                         "*Claude Multi-Agent Progress*"))
+      (display-buffer-in-side-window)
+      (side . bottom) (slot . 0) (window-height . 0.25)
+      (preserve-size . (nil . t)) (dedicated . t))))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Keybindings

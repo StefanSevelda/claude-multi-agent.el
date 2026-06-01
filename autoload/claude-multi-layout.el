@@ -45,31 +45,48 @@ at different times of day.  Reset with `claude-multi-layout/reset-time'.")
 ;; ──────────────────────────────────────────────────────────────────────────────
 
 (defun claude-multi-layout--ensure-progress-visible (&optional height)
-  "Ensure the progress buffer is displayed in a bottom side-window.
-Creates the buffer if it doesn't exist.  Any existing non-side window
-showing the buffer is replaced by a dedicated side-window so the
-progress table stays pinned at the bottom across layout switches.
-HEIGHT defaults to 0.25."
+  "Ensure the progress buffer is displayed in a window at the bottom.
+Creates the buffer if it doesn't exist.  Under Doom, displays via the
+popup system (a `set-popup-rule!' registered in config pins it at the
+bottom); outside Doom, falls back to a dedicated bottom side-window.
+Any existing non-bottom window showing the buffer is replaced, but never
+the sole window of its frame.  HEIGHT defaults to 0.25.
+
+Layouts call `delete-other-windows' up front, which removes a Doom popup,
+so each layout re-invokes this helper after its splits complete to re-pin
+the progress table."
   (let ((buf (get-buffer-create
               (or (bound-and-true-p claude-multi-progress-buffer-name)
                   "*Claude Multi-Agent Progress*")))
         (h (or height 0.25)))
-    ;; Activate table mode if not already set
+    ;; Activate table mode and refresh.  Never let a revert error abort the
+    ;; surrounding layout — pin the (possibly stale) buffer regardless.
     (with-current-buffer buf
       (unless (derived-mode-p 'cma-table-mode)
         (cma-table-mode))
-      (tabulated-list-revert))
-    ;; Kill any non-side window showing the buffer first
-    (when-let ((existing (get-buffer-window buf t)))
-      (unless (window-parameter existing 'window-side)
+      (condition-case err
+          (tabulated-list-revert)
+        (error (message "Progress: revert failed: %S" err))))
+    ;; Drop any non-side window showing the buffer on THIS frame first (never the
+    ;; sole window — that would signal an error).  Scope to the selected frame:
+    ;; the progress panel is pinned per-frame, so a window on another frame must
+    ;; not make us skip pinning here.
+    (when-let ((existing (get-buffer-window buf)))
+      (when (and (not (window-parameter existing 'window-side))
+                 (> (length (window-list (window-frame existing))) 1))
         (delete-window existing)))
-    ;; Always display via side-window to guarantee bottom pinning
-    (unless (get-buffer-window buf t)
-      (display-buffer-in-side-window buf
-        `((side . bottom) (slot . 0)
-          (window-height . ,h)
-          (preserve-size . (nil . t))
-          (dedicated . t))))))
+    ;; (Re)display at the bottom of the selected frame.
+    (unless (get-buffer-window buf)
+      (if (fboundp 'set-popup-rule!)
+          ;; Doom: the registered popup rule handles bottom placement; pass the
+          ;; per-layout height through the action alist so it overrides the
+          ;; rule's default size.
+          (display-buffer buf (when height `(nil (window-height . ,h))))
+        (display-buffer-in-side-window buf
+          `((side . bottom) (slot . 0)
+            (window-height . ,h)
+            (preserve-size . (nil . t))
+            (dedicated . t)))))))
 
 (defun claude-multi-layout--find-org-file (filename)
   "Open FILENAME from the org planning directory, returning the buffer.
@@ -207,6 +224,9 @@ Progress buffer pinned at bottom."
       (claude-multi-layout--disable-olivetti-in-buffer triage-buf))
     ;; Return focus to weekly plan
     (select-window (get-buffer-window week-buf))
+    ;; Re-pin progress at the bottom after splits (delete-other-windows above
+    ;; removed any pre-existing popup).
+    (claude-multi-layout--ensure-progress-visible 0.25)
     (message "Layout: agenda (%s)" week-file)))
 
 ;;;###autoload
@@ -360,7 +380,7 @@ in the `** Focus Blocks & Work Assignments` section and highlights it."
                                        (line-beginning-position)
                                      (point-max)))))
                 (claude-multi-layout--apply-assignment-indicator
-                 section-start now-hour now-min))))))))))
+                 section-start now-hour now-min)))))))))
 
 (defun claude-multi-layout--update-time-indicator ()
   "Refresh the time indicator in both the today buffer and week file.
@@ -426,6 +446,8 @@ Bottom: progress buffer at 50% height."
     ;; Start time indicator timer and apply initial week file indicator
     (claude-multi-layout--start-time-indicator)
     (claude-multi-layout--apply-week-file-indicator)
+    ;; Re-pin progress (taller for focus) after splits complete.
+    (claude-multi-layout--ensure-progress-visible 0.5)
     (message "Layout: focus (today + triage + progress)")))
 
 ;;;###autoload
@@ -437,6 +459,8 @@ Use for standalone inbox cleanup sessions."
     (claude-multi-layout--setup-layout 'email-triage 0.3)
     (switch-to-buffer email-buf)
     (claude-multi-layout--disable-olivetti-in-buffer email-buf)
+    ;; Re-pin progress at the bottom after the main buffer is shown.
+    (claude-multi-layout--ensure-progress-visible 0.3)
     (message "Layout: email-triage (email-triage.org)")))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
@@ -540,6 +564,8 @@ magit-status / neotree and magit-diff / changed-files views."
     (neotree-dir project-dir)
     ;; Return focus to magit
     (other-window 1)
+    ;; Re-pin progress after magit/neotree have taken their windows.
+    (claude-multi-layout--ensure-progress-visible 0.2)
     (message "Layout: project (%s) — g d to toggle diff"
              (abbreviate-file-name project-dir))))
 
