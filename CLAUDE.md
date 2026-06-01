@@ -169,6 +169,18 @@ Execute elisp directly in the running Emacs via emacsclient:
 ./emacs-eval.sh '(elisp-expression-here)'
 ```
 
+The script auto-discovers the Emacs daemon socket (works even when `$TMPDIR` is sandboxed, e.g. under Claude Code). Discovery order:
+1. `$EMACS_SOCKET` env var — explicit override
+2. `/var/folders/*/*/T/emacs<uid>/server` — macOS real TMPDIR (glob)
+3. `${TMPDIR}emacs<uid>/server` — standard location
+4. `lsof` on the `emacs --daemon` process — fallback
+5. `emacsclient` default — when none of the above applies
+
+```bash
+# Override socket explicitly if needed
+EMACS_SOCKET=/path/to/server ./emacs-eval.sh '(+ 1 2)'
+```
+
 Examples:
 ```bash
 # Check if cma bridge is loaded
