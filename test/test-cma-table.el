@@ -170,12 +170,23 @@
              (vec (cadr entry)))
         (expect (aref vec 7) :to-equal "75.5%")))
 
-    (it "uses session-id as table entry id"
+    (it "uses agent_id as table entry id (primary key)"
+      (let* ((agent '((agent_id . "my-agent")
+                      (session_id . "my-session-id")
+                      (name . "test")
+                      (status . "running")
+                      (cwd . "/tmp")
+                      (pane_id . "%5")
+                      (waiting_for_input . nil)))
+             (entry (cma-table--agent-to-entry agent nil)))
+        (expect (car entry) :to-equal "my-agent")))
+
+    (it "falls back to session_id when agent_id is absent (legacy)"
       (let* ((agent '((session_id . "my-session-id")
                       (name . "test")
                       (status . "running")
                       (cwd . "/tmp")
-                      (window_id . "10")
+                      (pane_id . "%5")
                       (waiting_for_input . nil)))
              (entry (cma-table--agent-to-entry agent nil)))
         (expect (car entry) :to-equal "my-session-id")))
