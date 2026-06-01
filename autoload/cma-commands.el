@@ -38,7 +38,7 @@ Prompts for task description, working directory, agent name, and model."
     (if result
         (let* ((agent (alist-get 'agent result))
                (name (alist-get 'name agent))
-               (wid (alist-get 'kitty_window_id agent)))
+               (wid (alist-get 'window_id agent)))
           (message "Spawned agent %s (window %s, model %s)" name wid model)
           (when (fboundp 'cma-table/refresh)
             (cma-table/refresh)))
@@ -154,7 +154,7 @@ After killing, offers to clean up associated worktrees."
 
 ;;;###autoload
 (defun cma/focus-agent ()
-  "Focus on a specific agent's kitty window via cma CLI."
+  "Focus on a specific agent's terminal window via cma CLI."
   (interactive)
   (let* ((agents (cma--call "list" "--json"))
          (names (mapcar (lambda (a)

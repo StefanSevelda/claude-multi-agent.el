@@ -46,7 +46,7 @@
 (define-derived-mode cma-table-mode tabulated-list-mode "CMA-Table"
   "Major mode for viewing Claude agents via cma CLI.
 
-Grouped by kitty window ID — agents in the same session appear together.
+Grouped by window ID — agents in the same session appear together.
 
 Keybindings:
   f / RET - Focus on agent at point
@@ -92,8 +92,8 @@ Keybindings:
          ;; Sort by window ID then by session start time
          (sorted (sort (copy-sequence (or agents '()))
                        (lambda (a b)
-                         (let ((win-a (or (alist-get 'kitty_window_id a) ""))
-                               (win-b (or (alist-get 'kitty_window_id b) ""))
+                         (let ((win-a (or (alist-get 'window_id a) ""))
+                               (win-b (or (alist-get 'window_id b) ""))
                                (time-a (or (alist-get 'session_started a) ""))
                                (time-b (or (alist-get 'session_started b) "")))
                            (if (string= win-a win-b)
@@ -102,7 +102,7 @@ Keybindings:
          (prev-window nil)
          (entries nil))
     (dolist (agent sorted)
-      (let* ((window-id (or (alist-get 'kitty_window_id agent) ""))
+      (let* ((window-id (or (alist-get 'window_id agent) ""))
              (is-child (and prev-window (string= window-id prev-window))))
         (push (cma-table--agent-to-entry agent is-child) entries)
         (setq prev-window window-id)))
@@ -116,7 +116,7 @@ IS-CHILD adds indentation prefix for child agents."
          (status-str (or (alist-get 'status agent) "unknown"))
          (cwd (or (alist-get 'cwd agent) ""))
          (model (or (alist-get 'model_name agent) ""))
-         (window-id (or (alist-get 'kitty_window_id agent) "—"))
+         (window-id (or (alist-get 'window_id agent) "—"))
          (git-branch (alist-get 'git_branch agent))
          (context-pct (alist-get 'context_used agent))
          (duration (or (alist-get 'duration agent) ""))

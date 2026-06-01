@@ -34,7 +34,7 @@
       (spy-on 'read-directory-name :and-return-value "/tmp/")
       (spy-on 'completing-read :and-return-value "opus")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "agent-1") (kitty_window_id . "42")))))
+              '((agent . ((name . "agent-1") (window_id . "42")))))
       (cma/spawn-agent)
       (expect 'cma--call :to-have-been-called)
       ;; Verify the args include --model opus
@@ -53,7 +53,7 @@
       (spy-on 'read-directory-name :and-return-value "/tmp/work/")
       (spy-on 'completing-read :and-return-value "haiku")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "agent-2") (kitty_window_id . "99")))))
+              '((agent . ((name . "agent-2") (window_id . "99")))))
       (cma/spawn-agent)
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
         ;; Should have: "spawn" "--task" "my task" "--dir" "/tmp/work/" "--json" "--model" "haiku"
@@ -72,7 +72,7 @@
       (spy-on 'read-directory-name :and-return-value "/tmp/")
       (spy-on 'completing-read :and-return-value "sonnet")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "backend") (kitty_window_id . "10")))))
+              '((agent . ((name . "backend") (window_id . "10")))))
       (cma/spawn-agent)
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
         (expect (member "--name" call-args) :to-be-truthy)
@@ -89,7 +89,7 @@
       (spy-on 'read-directory-name :and-return-value "/tmp/")
       (spy-on 'completing-read :and-return-value "sonnet")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "agent-a3f1") (kitty_window_id . "11")))))
+              '((agent . ((name . "agent-a3f1") (window_id . "11")))))
       (cma/spawn-agent)
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
         (expect (member "--name" call-args) :not :to-be-truthy))))

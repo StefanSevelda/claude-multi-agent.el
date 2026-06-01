@@ -41,32 +41,6 @@ This can be customized to use different binary names (e.g., \\='claude26\\=')."
   :type 'string
   :group 'claude-multi)
 
-(defcustom claude-multi-kitty-listen-address nil
-  "Kitty listen address for remote control.
-If nil, uses KITTY_LISTEN_ON environment variable.
-Format: unix:/tmp/kitty-claude or tcp:localhost:5555"
-  :type '(choice (const :tag "Auto-detect from env" nil)
-                 (string :tag "Custom address"))
-  :group 'claude-multi)
-
-(defcustom claude-multi-kitty-window-type 'os-window
-  "How to create kitty windows for agents.
-\\='os-window - New OS window (separate kitty instance)
-\\='tab - New tab in active kitty window
-\\='window - New kitty split in active tab"
-  :type '(choice (const :tag "OS Window" os-window)
-                 (const :tag "Tab" tab)
-                 (const :tag "Split Window" window))
-  :group 'claude-multi)
-
-(defcustom claude-multi-agent-spawn-type 'tab
-  "How to spawn agents within the session OS window.
-\\='tab - Each agent gets its own tab (default)
-\\='split - Agents are split within tabs"
-  :type '(choice (const :tag "New tab for each agent" tab)
-                 (const :tag "Split window for each agent" split))
-  :group 'claude-multi)
-
 (defcustom claude-multi-output-throttle-delay 0.5
   "Delay in seconds between progress buffer updates to reduce flashing.
 Setting this higher (e.g., 1.0) will reduce flashing but make updates
@@ -84,10 +58,10 @@ Available methods: popup, markdown, modeline, sound"
   :group 'claude-multi)
 
 (defcustom claude-multi-buffer-cleanup 'auto-close-success
-  "How to handle kitty windows when agents complete.
+  "How to handle terminal windows when agents complete.
 \\='keep-all - Keep all windows open (user closes manually)
 \\='auto-close-success - Auto-cleanup worktrees for successful agents
-\\='ask - Ask before closing kitty windows"
+\\='ask - Ask before closing terminal windows"
   :type '(choice (const :tag "Keep all windows" keep-all)
                  (const :tag "Auto-cleanup worktrees" auto-close-success)
                  (const :tag "Ask before closing" ask))
@@ -203,14 +177,14 @@ Available methods: popup, markdown, modeline, sound"
 
 ;;;###autoload
 (defun claude-multi/spawn-agent ()
-  "Spawn a new Claude agent in a kitty tab.
+  "Spawn a new Claude agent in a terminal window.
 Prompts for task description and working directory."
   (interactive)
   (cma/spawn-agent))
 
 ;;;###autoload
 (defun claude-multi/spawn-agent-with-worktree ()
-  "Spawn agent with git worktree isolation in a kitty tab.
+  "Spawn agent with git worktree isolation in a terminal window.
 Prompts for task description, directory, and branch name."
   (interactive)
   (cma/spawn-agent-with-worktree))
@@ -230,7 +204,7 @@ Prompts for task description, directory, and branch name."
 
 ;;;###autoload
 (defun claude-multi/focus-agent ()
-  "Switch focus to a specific agent's kitty window."
+  "Switch focus to a specific agent's terminal window."
   (interactive)
   (cma/focus-agent))
 
@@ -330,8 +304,7 @@ Prompts for task description, directory, and branch name."
          :desc "Toggle status/diff"      "d" #'claude-multi-layout/project-toggle-diff
          :desc "Exit layout"             "e" #'claude-multi-layout/exit
          :desc "Switch layout"           "l" #'claude-multi-layout/switch
-         :desc "Revert files"            "r" #'claude-multi-layout/revert-files
-         :desc "Reset Kitty layout"     "R" #'claude-multi-layout/reset-kitty))))
+         :desc "Revert files"            "r" #'claude-multi-layout/revert-files))))
 
 ;; Quick g d toggle for project layout in magit buffers
 (with-eval-after-load 'magit
