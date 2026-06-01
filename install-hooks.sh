@@ -5,12 +5,20 @@
 set -e
 
 CLAUDE_DIR="$HOME/.claude"
-HOOKS_DIR="$CLAUDE_DIR/hooks"
 SETTINGS_FILE="$CLAUDE_DIR/settings.json"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 echo "Claude Multi-Agent Hook Installation"
 echo "====================================="
+echo
+
+# Verify cma binary is available
+if ! command -v cma &> /dev/null; then
+    echo "❌ ERROR: cma binary not found in PATH"
+    echo "   Install cma from: https://github.com/StefanSevelda/cma-agent-framework"
+    exit 1
+fi
+
+echo "✓ cma binary found: $(which cma)"
 echo
 
 # Create .claude directory if it doesn't exist
@@ -19,33 +27,8 @@ if [ ! -d "$CLAUDE_DIR" ]; then
     mkdir -p "$CLAUDE_DIR"
 fi
 
-# Create hooks directory if it doesn't exist
-if [ ! -d "$HOOKS_DIR" ]; then
-    echo "Creating $HOOKS_DIR directory..."
-    mkdir -p "$HOOKS_DIR"
-fi
-
-# Copy hook scripts
-echo "Installing hook scripts..."
-if [ -f "$HOOKS_DIR/status-summary.py" ]; then
-    echo "  - status-summary.py already exists, backing up to status-summary.py.bak"
-    cp "$HOOKS_DIR/status-summary.py" "$HOOKS_DIR/status-summary.py.bak"
-fi
-cp "$SCRIPT_DIR/hooks/status-summary.py" "$HOOKS_DIR/status-summary.py"
-chmod +x "$HOOKS_DIR/status-summary.py"
-echo "  ✓ status-summary.py installed"
-
-if [ -f "$HOOKS_DIR/status-stop.py" ]; then
-    echo "  - status-stop.py already exists, backing up to status-stop.py.bak"
-    cp "$HOOKS_DIR/status-stop.py" "$HOOKS_DIR/status-stop.py.bak"
-fi
-cp "$SCRIPT_DIR/hooks/status-stop.py" "$HOOKS_DIR/status-stop.py"
-chmod +x "$HOOKS_DIR/status-stop.py"
-echo "  ✓ status-stop.py installed"
-
 # Handle settings.json
 if [ ! -f "$SETTINGS_FILE" ]; then
-    echo
     echo "Creating new $SETTINGS_FILE with hook configuration..."
     cat > "$SETTINGS_FILE" << 'EOF'
 {
@@ -56,7 +39,7 @@ if [ ! -f "$SETTINGS_FILE" ]; then
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/status-summary.py",
+            "command": "cma hook post-tool-use",
             "timeout": 10
           }
         ]
@@ -67,7 +50,19 @@ if [ ! -f "$SETTINGS_FILE" ]; then
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/status-stop.py",
+            "command": "cma hook stop",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cma hook notification",
             "timeout": 5
           }
         ]
@@ -78,7 +73,6 @@ if [ ! -f "$SETTINGS_FILE" ]; then
 EOF
     echo "  ✓ settings.json created with hook configuration"
 else
-    echo
     echo "Existing settings.json found. Updating hook configuration..."
 
     # Backup existing settings
@@ -99,7 +93,7 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/status-summary.py",
+            "command": "cma hook post-tool-use",
             "timeout": 10
           }
         ]
@@ -110,7 +104,19 @@ else
         "hooks": [
           {
             "type": "command",
-            "command": "python3 ~/.claude/hooks/status-stop.py",
+            "command": "cma hook stop",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "cma hook notification",
             "timeout": 5
           }
         ]
@@ -143,62 +149,97 @@ except json.JSONDecodeError:
 if "hooks" not in settings:
     settings["hooks"] = {}
 
-# Add PostToolUse hook if not present
+def has_cma_hook(hook_list, command_substring):
+    """Check if a cma hook command already exists in the hook list."""
+    for hook_config in hook_list:
+        if "hooks" in hook_config:
+            for hook in hook_config["hooks"]:
+                cmd = hook.get("command", "")
+                if command_substring in cmd:
+                    return True
+    return False
+
+def remove_old_python_hooks(hook_list, python_pattern):
+    """Remove old Python-based hooks matching the pattern."""
+    cleaned = []
+    for hook_config in hook_list:
+        if "hooks" in hook_config:
+            new_hooks = [h for h in hook_config["hooks"] if python_pattern not in h.get("command", "")]
+            if new_hooks:
+                hook_config["hooks"] = new_hooks
+                cleaned.append(hook_config)
+        else:
+            cleaned.append(hook_config)
+    return cleaned
+
+# PostToolUse hook
 if "PostToolUse" not in settings["hooks"]:
     settings["hooks"]["PostToolUse"] = []
 
-# Check if our status-summary hook already exists
-status_hook_exists = False
-for hook_config in settings["hooks"]["PostToolUse"]:
-    if "hooks" in hook_config:
-        for hook in hook_config["hooks"]:
-            if "status-summary.py" in hook.get("command", ""):
-                status_hook_exists = True
-                break
+# Remove old Python hooks if present
+settings["hooks"]["PostToolUse"] = remove_old_python_hooks(
+    settings["hooks"]["PostToolUse"], "status-summary.py"
+)
 
-# Add status-summary hook if not present
-if not status_hook_exists:
+if not has_cma_hook(settings["hooks"]["PostToolUse"], "cma hook post-tool-use"):
     settings["hooks"]["PostToolUse"].append({
         "matcher": "Write|Edit|Bash|Task|AskUserQuestion",
         "hooks": [
             {
                 "type": "command",
-                "command": "python3 ~/.claude/hooks/status-summary.py",
+                "command": "cma hook post-tool-use",
                 "timeout": 10
             }
         ]
     })
-    print("  ✓ Added PostToolUse hook for status-summary.py")
+    print("  ✓ Added PostToolUse hook (cma hook post-tool-use)")
 else:
-    print("  - PostToolUse hook for status-summary.py already exists")
+    print("  - PostToolUse hook already exists")
 
-# Add Stop hook if not present
+# Stop hook
 if "Stop" not in settings["hooks"]:
     settings["hooks"]["Stop"] = []
 
-# Check if our status-stop hook already exists
-stop_hook_exists = False
-for hook_config in settings["hooks"]["Stop"]:
-    if "hooks" in hook_config:
-        for hook in hook_config["hooks"]:
-            if "status-stop.py" in hook.get("command", ""):
-                stop_hook_exists = True
-                break
+settings["hooks"]["Stop"] = remove_old_python_hooks(
+    settings["hooks"]["Stop"], "status-stop.py"
+)
 
-# Add status-stop hook if not present
-if not stop_hook_exists:
+if not has_cma_hook(settings["hooks"]["Stop"], "cma hook stop"):
     settings["hooks"]["Stop"].append({
         "hooks": [
             {
                 "type": "command",
-                "command": "python3 ~/.claude/hooks/status-stop.py",
+                "command": "cma hook stop",
                 "timeout": 5
             }
         ]
     })
-    print("  ✓ Added Stop hook for status-stop.py")
+    print("  ✓ Added Stop hook (cma hook stop)")
 else:
-    print("  - Stop hook for status-stop.py already exists")
+    print("  - Stop hook already exists")
+
+# Notification hook
+if "Notification" not in settings["hooks"]:
+    settings["hooks"]["Notification"] = []
+
+settings["hooks"]["Notification"] = remove_old_python_hooks(
+    settings["hooks"]["Notification"], "status-notification.py"
+)
+
+if not has_cma_hook(settings["hooks"]["Notification"], "cma hook notification"):
+    settings["hooks"]["Notification"].append({
+        "matcher": "",
+        "hooks": [
+            {
+                "type": "command",
+                "command": "cma hook notification",
+                "timeout": 5
+            }
+        ]
+    })
+    print("  ✓ Added Notification hook (cma hook notification)")
+else:
+    print("  - Notification hook already exists")
 
 # Write updated settings
 with open(settings_file, 'w') as f:

@@ -167,31 +167,12 @@ Reverts from disk to ensure fresh content."
 ;; ──────────────────────────────────────────────────────────────────────────────
 
 
-(defun claude-multi-layout--reset-kitty-layout (&optional emacs-pct)
-  "Re-position Kitty OS windows (Emacs left, Agents right).
-EMACS-PCT overrides the default screen-width percentage for Emacs.
-Calls `cma layout reset'.  Falls back gracefully if cma is unavailable."
-  (when (and (fboundp 'cma--available-p) (cma--available-p))
-    (if emacs-pct
-        (cma--call-raw "layout" "reset"
-                       "--emacs-pct" (number-to-string emacs-pct))
-      (cma--call-raw "layout" "reset"))))
 
-;;;###autoload
-(defun claude-multi-layout/reset-kitty ()
-  "Interactively reposition Kitty OS windows."
-  (interactive)
-  (if (and (fboundp 'cma--available-p) (cma--available-p))
-      (let ((output (cma--call-raw "layout" "reset")))
-        (message "%s" (or output "Layout reset")))
-    (message "cma binary not found — cannot reset layout")))
-
-(defun claude-multi-layout--setup-layout (name &optional progress-height emacs-pct)
+(defun claude-multi-layout--setup-layout (name &optional progress-height _emacs-pct)
   "Common setup for entering a layout.
 Saves window config (first time only), clears existing windows,
-resets Kitty positioning, and pins the progress buffer.
-NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25.
-EMACS-PCT overrides the default kitty screen-width percentage for Emacs."
+and pins the progress buffer.
+NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25."
   ;; Save pre-layout config (only if not already in a layout)
   (unless claude-multi-layout--pre-layout-config
     (setq claude-multi-layout--pre-layout-config (current-window-configuration)))
@@ -199,8 +180,6 @@ EMACS-PCT overrides the default kitty screen-width percentage for Emacs."
   (when (window-parameter (selected-window) 'window-side)
     (select-window (window-main-window)))
   (delete-other-windows)
-  ;; Reset Kitty OS window positioning
-  (claude-multi-layout--reset-kitty-layout emacs-pct)
   ;; Pin progress buffer at bottom
   (claude-multi-layout--ensure-progress-visible progress-height)
   ;; Track current layout
