@@ -14,6 +14,9 @@
 (defvar claude-multi-default-model "opusplan"
   "Default model for spawning agents.  Overridden by config.el defcustom.")
 
+(defvar claude-multi-default-project-dir "~/projects"
+  "Default directory for spawning agents.  Overridden by config.el defcustom.")
+
 (defun cma--existing-domains ()
   "Distinct non-empty domains across current agents (from `cma list --json')."
   (let ((agents (cma--call "list" "--json")))
@@ -28,24 +31,18 @@
   "Where to create worktrees.  Overridden by config.el defcustom.")
 
 ;;;###autoload
-(defun cma/spawn-agent (&optional arg)
+(defun cma/spawn-agent ()
   "Spawn a new Claude agent via cma CLI.
-Prompts for task, optional domain, and model.  With a prefix ARG
-\(\\[universal-argument]), also prompts for working directory and agent name."
-  (interactive "P")
+Prompts for task, working directory (default ~/projects), optional domain, and model."
+  (interactive)
   (let* ((task   (string-trim (read-string "Task description: ")))
+         (dir    (read-directory-name "Working directory: "
+                                      (expand-file-name claude-multi-default-project-dir) nil t))
          (domain (string-trim (completing-read "Domain (empty for none): "
                                                (cma--existing-domains) nil nil)))
          (model  (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
                                   nil nil nil nil claude-multi-default-model))
-         (dir    (if arg
-                     (read-directory-name "Working directory: " default-directory nil t)
-                   default-directory))
-         (name   (if arg
-                     (string-trim (read-string "Agent name (empty for auto): "))
-                   ""))
          (args   (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
-         (args   (if (not (string-empty-p name))   (append args (list "--name"   name))   args))
          (args   (if (and model (not (string-empty-p model)))
                      (append args (list "--model" model))
                    args))
@@ -61,14 +58,14 @@ Prompts for task, optional domain, and model.  With a prefix ARG
       (message "Spawn failed: %s" (or cma--last-error "unknown error")))))
 
 ;;;###autoload
-(defun cma/spawn-agent-with-worktree (&optional arg)
+(defun cma/spawn-agent-with-worktree ()
   "Spawn a Claude agent with git worktree isolation via cma CLI.
 Branch is required; aborts if left empty.  Task is optional and defaults to
-the branch name when left blank.  Prompts for domain and model.  With a
-prefix ARG (\\[universal-argument]), also prompts for directory and agent name.
+the branch name when left blank.  Prompts for working directory (default
+~/projects), domain, and model.
 When `claude-multi-worktree-location' is \\='claude, the prompt asks for a
 worktree name (passed as --branch to cma, which routes it to --worktree)."
-  (interactive "P")
+  (interactive)
   (let* ((claude-mode (eq claude-multi-worktree-location 'claude))
          (branch      (string-trim
                        (read-string (if claude-mode "Worktree name: " "Branch name: "))))
@@ -77,19 +74,14 @@ worktree name (passed as --branch to cma, which routes it to --worktree)."
          (task-input  (string-trim
                        (read-string (format "Task (empty → \"%s\"): " branch))))
          (task        (if (string-empty-p task-input) branch task-input))
+         (dir         (read-directory-name "Working directory: "
+                                           (expand-file-name claude-multi-default-project-dir) nil t))
          (domain      (string-trim (completing-read "Domain (empty for none): "
                                                     (cma--existing-domains) nil nil)))
          (model       (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
                                        nil nil nil nil claude-multi-default-model))
-         (dir         (if arg
-                          (read-directory-name "Working directory: " default-directory nil t)
-                        default-directory))
-         (name        (if arg
-                          (string-trim (read-string "Agent name (empty for auto): "))
-                        ""))
          (args        (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
          (args        (append args (list "--branch" branch)))
-         (args        (if (not (string-empty-p name))   (append args (list "--name"   name))   args))
          (args        (if (and model (not (string-empty-p model)))
                           (append args (list "--model" model))
                         args))

@@ -25,6 +25,12 @@ opusplan (hybrid opus planning + sonnet execution, default)."
   :type 'string
   :group 'claude-multi)
 
+(defcustom claude-multi-default-project-dir "~/projects"
+  "Default working directory when spawning new agents.
+All git repos are expected to live under this directory."
+  :type 'directory
+  :group 'claude-multi)
+
 (defcustom claude-multi-worktree-location 'adjacent
   "Where to create worktrees for agents.
 \\='adjacent - Create in ../claude-worktrees/
@@ -176,22 +182,19 @@ Available methods: popup, markdown, modeline, sound"
 ;; Interactive commands — thin wrappers calling cma-commands.el
 
 ;;;###autoload
-(defun claude-multi/spawn-agent (&optional arg)
+(defun claude-multi/spawn-agent ()
   "Spawn a new Claude agent in a terminal window.
-Default flow prompts for task, domain, and model (RET accepts opusplan).
-With a prefix ARG (\\[universal-argument]), also prompts for working directory
-and agent name."
-  (interactive "P")
-  (cma/spawn-agent arg))
+Prompts for task, working directory (default ~/projects), domain, and model."
+  (interactive)
+  (cma/spawn-agent))
 
 ;;;###autoload
-(defun claude-multi/spawn-agent-with-worktree (&optional arg)
+(defun claude-multi/spawn-agent-with-worktree ()
   "Spawn agent with git worktree isolation in a terminal window.
 Branch is required and prompted first.  Task is optional (blank → branch name).
-Also prompts for domain and model.  With a prefix ARG
-\(\\[universal-argument]), also prompts for working directory and agent name."
-  (interactive "P")
-  (cma/spawn-agent-with-worktree arg))
+Prompts for working directory (default ~/projects), domain, and model."
+  (interactive)
+  (cma/spawn-agent-with-worktree))
 
 ;;;###autoload
 (defun claude-multi/open-progress ()
