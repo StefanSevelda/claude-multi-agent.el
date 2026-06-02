@@ -25,11 +25,14 @@ Returns nil and sets `cma--last-error' on failure."
                          (cons cma-binary-path args) " "))
          (output (with-temp-buffer
                    (let ((exit-code (call-process-shell-command cmd nil t)))
-                     (if (= exit-code 0)
+                     (if (and (numberp exit-code) (= exit-code 0))
                          (progn
                            (setq cma--last-error nil)
                            (buffer-string))
-                       (setq cma--last-error (string-trim (buffer-string)))
+                       (setq cma--last-error
+                             (if (stringp exit-code)
+                                 exit-code
+                               (string-trim (buffer-string))))
                        nil)))))
     (when output
       (condition-case err
