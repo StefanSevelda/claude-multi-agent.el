@@ -11,69 +11,95 @@
 
 (declare-function cma-table/refresh "cma-table")
 
-(defvar claude-multi-default-model "sonnet"
+(defvar claude-multi-default-model "opusplan"
   "Default model for spawning agents.  Overridden by config.el defcustom.")
+
+(defun cma--existing-domains ()
+  "Distinct non-empty domains across current agents (from `cma list --json')."
+  (let ((agents (cma--call "list" "--json")))
+    (delete-dups
+     (delq nil
+           (mapcar (lambda (a)
+                     (let ((d (alist-get 'domain a)))
+                       (and d (not (string-empty-p d)) d)))
+                   agents)))))
 
 (defvar claude-multi-worktree-location 'adjacent
   "Where to create worktrees.  Overridden by config.el defcustom.")
 
 ;;;###autoload
-(defun cma/spawn-agent ()
+(defun cma/spawn-agent (&optional arg)
   "Spawn a new Claude agent via cma CLI.
-Prompts for task description, working directory, agent name, and model."
-  (interactive)
-  (let* ((task (string-trim (read-string "Task description: ")))
-         (dir (read-directory-name "Working directory: " default-directory nil t))
-         (name (string-trim (read-string "Agent name (empty for auto): ")))
-         (model (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
-                                 nil nil nil nil claude-multi-default-model))
-         (args (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
-         (args (if (not (string-empty-p name))
-                   (append args (list "--name" name))
-                 args))
-         (args (if (and model (not (string-empty-p model)))
-                   (append args (list "--model" model))
-                 args))
+Prompts for task, optional domain, and model.  With a prefix ARG
+\(\\[universal-argument]), also prompts for working directory and agent name."
+  (interactive "P")
+  (let* ((task   (string-trim (read-string "Task description: ")))
+         (domain (string-trim (completing-read "Domain (empty for none): "
+                                               (cma--existing-domains) nil nil)))
+         (model  (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
+                                  nil nil nil nil claude-multi-default-model))
+         (dir    (if arg
+                     (read-directory-name "Working directory: " default-directory nil t)
+                   default-directory))
+         (name   (if arg
+                     (string-trim (read-string "Agent name (empty for auto): "))
+                   ""))
+         (args   (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
+         (args   (if (not (string-empty-p name))   (append args (list "--name"   name))   args))
+         (args   (if (and model (not (string-empty-p model)))
+                     (append args (list "--model" model))
+                   args))
+         (args   (if (not (string-empty-p domain)) (append args (list "--domain" domain)) args))
          (result (apply #'cma--call args)))
     (if result
-        (let* ((agent (alist-get 'agent result))
-               (name (alist-get 'id agent))
+        (let* ((agent   (alist-get 'agent result))
+               (id      (alist-get 'id agent))
                (pane-id (alist-get 'pane_id agent)))
-          (message "Spawned agent %s (pane %s, model %s)" name pane-id model)
+          (message "Spawned agent %s (pane %s, model %s)" id pane-id model)
           (when (fboundp 'cma-table/refresh)
             (cma-table/refresh)))
       (message "Spawn failed: %s" (or cma--last-error "unknown error")))))
 
 ;;;###autoload
-(defun cma/spawn-agent-with-worktree ()
+(defun cma/spawn-agent-with-worktree (&optional arg)
   "Spawn a Claude agent with git worktree isolation via cma CLI.
-Prompts for task, directory, branch/worktree name, agent name, and model.
+Branch is required; aborts if left empty.  Task is optional and defaults to
+the branch name when left blank.  Prompts for domain and model.  With a
+prefix ARG (\\[universal-argument]), also prompts for directory and agent name.
 When `claude-multi-worktree-location' is \\='claude, the prompt asks for a
 worktree name (passed as --branch to cma, which routes it to --worktree)."
-  (interactive)
-  (let* ((task (string-trim (read-string "Task description: ")))
-         (dir (read-directory-name "Working directory: " default-directory nil t))
-         (claude-mode (eq claude-multi-worktree-location 'claude))
-         (branch (string-trim (read-string (if claude-mode "Worktree name: " "Branch name: "))))
-         (name (read-string "Agent name (empty for auto): "))
-         (model (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
-                                 nil nil nil nil claude-multi-default-model))
-         (args (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
-         (args (if (and branch (not (string-empty-p branch)))
-                   (append args (list "--branch" branch))
-                 args))
-         (args (if (not (string-empty-p name))
-                   (append args (list "--name" name))
-                 args))
-         (args (if (and model (not (string-empty-p model)))
-                   (append args (list "--model" model))
-                 args))
-         (result (apply #'cma--call args)))
+  (interactive "P")
+  (let* ((claude-mode (eq claude-multi-worktree-location 'claude))
+         (branch      (string-trim
+                       (read-string (if claude-mode "Worktree name: " "Branch name: "))))
+         (_           (when (string-empty-p branch)
+                        (user-error "Branch name is required")))
+         (task-input  (string-trim
+                       (read-string (format "Task (empty → \"%s\"): " branch))))
+         (task        (if (string-empty-p task-input) branch task-input))
+         (domain      (string-trim (completing-read "Domain (empty for none): "
+                                                    (cma--existing-domains) nil nil)))
+         (model       (completing-read "Model: " '("sonnet" "opus" "opusplan" "haiku")
+                                       nil nil nil nil claude-multi-default-model))
+         (dir         (if arg
+                          (read-directory-name "Working directory: " default-directory nil t)
+                        default-directory))
+         (name        (if arg
+                          (string-trim (read-string "Agent name (empty for auto): "))
+                        ""))
+         (args        (list "spawn" "--task" task "--dir" (expand-file-name dir) "--json"))
+         (args        (append args (list "--branch" branch)))
+         (args        (if (not (string-empty-p name))   (append args (list "--name"   name))   args))
+         (args        (if (and model (not (string-empty-p model)))
+                          (append args (list "--model" model))
+                        args))
+         (args        (if (not (string-empty-p domain)) (append args (list "--domain" domain)) args))
+         (result      (apply #'cma--call args)))
     (if result
-        (let* ((agent (alist-get 'agent result))
-               (name (alist-get 'name agent)))
+        (let* ((agent      (alist-get 'agent result))
+               (agent-name (alist-get 'name agent)))
           (message "Spawned agent %s with worktree (%s: %s, model: %s)"
-                   name
+                   agent-name
                    (if claude-mode "worktree" "branch")
                    branch model)
           (when (fboundp 'cma-table/refresh)
@@ -118,7 +144,7 @@ After killing, offers to clean up associated worktree."
          ;; Store full alist so we can extract git_branch after kill
          (names (mapcar (lambda (a)
                           (cons (format "%s [%s] - %s"
-                                        (alist-get 'name a)
+                                        (or (alist-get 'title a) (alist-get 'name a) "")
                                         (upcase (alist-get 'status a))
                                         (or (alist-get 'cwd a) ""))
                                 a))
@@ -159,7 +185,7 @@ After killing, offers to clean up associated worktrees."
   (let* ((agents (cma--call "list" "--json"))
          (names (mapcar (lambda (a)
                           (cons (format "%s [%s] - %s"
-                                        (alist-get 'name a)
+                                        (or (alist-get 'title a) (alist-get 'name a) "")
                                         (upcase (alist-get 'status a))
                                         (or (alist-get 'cwd a) ""))
                                 (alist-get 'agent_id a)))
@@ -177,7 +203,7 @@ After killing, offers to clean up associated worktrees."
   (let* ((agents (cma--call "list" "--json"))
          (names (mapcar (lambda (a)
                           (cons (format "%s [%s]"
-                                        (alist-get 'name a)
+                                        (or (alist-get 'title a) (alist-get 'name a) "")
                                         (alist-get 'agent_id a))
                                 (alist-get 'agent_id a)))
                         agents))

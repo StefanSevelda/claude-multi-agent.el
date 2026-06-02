@@ -18,10 +18,10 @@
   :prefix "claude-multi-")
 
 ;;; Customization variables
-(defcustom claude-multi-default-model "sonnet"
+(defcustom claude-multi-default-model "opusplan"
   "Default Claude model for new agents.
-Model aliases: haiku (fast), sonnet (balanced, default), opus (advanced),
-opusplan (hybrid opus planning + sonnet execution)."
+Model aliases: haiku (fast), sonnet (balanced), opus (advanced),
+opusplan (hybrid opus planning + sonnet execution, default)."
   :type 'string
   :group 'claude-multi)
 
@@ -176,18 +176,22 @@ Available methods: popup, markdown, modeline, sound"
 ;; Interactive commands — thin wrappers calling cma-commands.el
 
 ;;;###autoload
-(defun claude-multi/spawn-agent ()
+(defun claude-multi/spawn-agent (&optional arg)
   "Spawn a new Claude agent in a terminal window.
-Prompts for task description and working directory."
-  (interactive)
-  (cma/spawn-agent))
+Default flow prompts for task, domain, and model (RET accepts opusplan).
+With a prefix ARG (\\[universal-argument]), also prompts for working directory
+and agent name."
+  (interactive "P")
+  (cma/spawn-agent arg))
 
 ;;;###autoload
-(defun claude-multi/spawn-agent-with-worktree ()
+(defun claude-multi/spawn-agent-with-worktree (&optional arg)
   "Spawn agent with git worktree isolation in a terminal window.
-Prompts for task description, directory, and branch name."
-  (interactive)
-  (cma/spawn-agent-with-worktree))
+Branch is required and prompted first.  Task is optional (blank → branch name).
+Also prompts for domain and model.  With a prefix ARG
+\(\\[universal-argument]), also prompts for working directory and agent name."
+  (interactive "P")
+  (cma/spawn-agent-with-worktree arg))
 
 ;;;###autoload
 (defun claude-multi/open-progress ()

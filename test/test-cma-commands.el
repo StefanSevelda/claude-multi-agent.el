@@ -25,71 +25,66 @@
   (describe "cma/spawn-agent"
 
     (it "passes --model flag to cma CLI"
+      ;; Mock cma--existing-domains so cma--call index 0 is the spawn call
+      (spy-on 'cma--existing-domains :and-return-value nil)
       (spy-on 'read-string :and-call-fake
               (lambda (prompt &rest _)
-                (cond
-                 ((string-match-p "Task" prompt) "test task")
-                 ((string-match-p "name" prompt) "")
-                 (t ""))))
-      (spy-on 'read-directory-name :and-return-value "/tmp/")
+                (cond ((string-match-p "Task" prompt) "test task")
+                      (t ""))))
       (spy-on 'completing-read :and-return-value "opus")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "agent-1") (window_id . "42")))))
+              '((agent . ((id . "agent-1") (pane_id . "42")))))
       (cma/spawn-agent)
       (expect 'cma--call :to-have-been-called)
-      ;; Verify the args include --model opus
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
         (expect (member "--model" call-args) :to-be-truthy)
         (expect (nth (1+ (cl-position "--model" call-args :test #'string=)) call-args)
                 :to-equal "opus")))
 
     (it "includes --model in args list alongside other flags"
+      (spy-on 'cma--existing-domains :and-return-value nil)
       (spy-on 'read-string :and-call-fake
               (lambda (prompt &rest _)
-                (cond
-                 ((string-match-p "Task" prompt) "my task")
-                 ((string-match-p "name" prompt) "")
-                 (t ""))))
-      (spy-on 'read-directory-name :and-return-value "/tmp/work/")
+                (cond ((string-match-p "Task" prompt) "my task")
+                      (t ""))))
       (spy-on 'completing-read :and-return-value "haiku")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "agent-2") (window_id . "99")))))
+              '((agent . ((id . "agent-2") (pane_id . "99")))))
       (cma/spawn-agent)
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
-        ;; Should have: "spawn" "--task" "my task" "--dir" "/tmp/work/" "--json" "--model" "haiku"
         (expect (car call-args) :to-equal "spawn")
         (expect (member "--task" call-args) :to-be-truthy)
         (expect (member "--json" call-args) :to-be-truthy)
         (expect (member "--model" call-args) :to-be-truthy)))
 
-    (it "passes --name flag when name is provided"
+    (it "passes --name flag when name is provided (with prefix arg)"
+      ;; --name is only prompted when a prefix arg is given (C-u)
+      (spy-on 'cma--existing-domains :and-return-value nil)
       (spy-on 'read-string :and-call-fake
               (lambda (prompt &rest _)
-                (cond
-                 ((string-match-p "Task" prompt) "named task")
-                 ((string-match-p "name" prompt) "backend")
-                 (t ""))))
+                (cond ((string-match-p "Task" prompt) "named task")
+                      ((string-match-p "name" prompt) "backend")
+                      (t ""))))
       (spy-on 'read-directory-name :and-return-value "/tmp/")
       (spy-on 'completing-read :and-return-value "sonnet")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "backend") (window_id . "10")))))
-      (cma/spawn-agent)
+              '((agent . ((id . "backend") (pane_id . "10")))))
+      (cma/spawn-agent t)
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
         (expect (member "--name" call-args) :to-be-truthy)
         (expect (nth (1+ (cl-position "--name" call-args :test #'string=)) call-args)
                 :to-equal "backend")))
 
-    (it "omits --name flag when name is empty"
+    (it "omits --name flag when no prefix arg"
+      ;; Without C-u, name is never prompted — --name must not appear
+      (spy-on 'cma--existing-domains :and-return-value nil)
       (spy-on 'read-string :and-call-fake
               (lambda (prompt &rest _)
-                (cond
-                 ((string-match-p "Task" prompt) "anon task")
-                 ((string-match-p "name" prompt) "")
-                 (t ""))))
-      (spy-on 'read-directory-name :and-return-value "/tmp/")
+                (cond ((string-match-p "Task" prompt) "anon task")
+                      (t ""))))
       (spy-on 'completing-read :and-return-value "sonnet")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "agent-a3f1") (window_id . "11")))))
+              '((agent . ((id . "agent-a3f1") (pane_id . "11")))))
       (cma/spawn-agent)
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
         (expect (member "--name" call-args) :not :to-be-truthy))))
@@ -97,17 +92,16 @@
   (describe "cma/spawn-agent-with-worktree"
 
     (it "passes --model flag alongside --branch"
+      (spy-on 'cma--existing-domains :and-return-value nil)
       (spy-on 'read-string :and-call-fake
               (lambda (prompt &rest _)
                 (cond
+                 ((string-match-p "Branch\\|Worktree" prompt) "feature/foo")
                  ((string-match-p "Task" prompt) "wt task")
-                 ((string-match-p "Branch" prompt) "feature/foo")
-                 ((string-match-p "name" prompt) "")
                  (t ""))))
-      (spy-on 'read-directory-name :and-return-value "/tmp/")
       (spy-on 'completing-read :and-return-value "sonnet")
       (spy-on 'cma--call :and-return-value
-              '((agent . ((name . "agent-3")))))
+              '((agent . ((id . "agent-3") (name . "agent-3")))))
       (cma/spawn-agent-with-worktree)
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
         (expect (member "--branch" call-args) :to-be-truthy)
