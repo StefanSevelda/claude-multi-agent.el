@@ -46,7 +46,7 @@
 (define-derived-mode cma-table-mode tabulated-list-mode "CMA-Table"
   "Major mode for viewing Claude agents via cma CLI.
 
-Grouped by window ID — agents in the same session appear together.
+Grouped by domain — agents sharing a domain appear together.
 
 Keybindings:
   f / RET - Focus on agent at point
@@ -56,16 +56,16 @@ Keybindings:
 
   (setq tabulated-list-format
         [("Icon"     6 nil :right-align nil)
-         ("Window"   8 t :right-align nil)
-         ("Name"     25 t :right-align nil)
+         ("Domain"   16 t :right-align nil)
+         ("Title"    28 t :right-align nil)
+         ("Ctx"      8 nil :right-align t)
          ("Location" 30 t :right-align nil)
          ("Status"   14 t :right-align nil)
          ("Model"    8 t :right-align nil)
-         ("Time"     10 nil :right-align t)
-         ("Ctx"      8 nil :right-align t)])
+         ("Time"     10 nil :right-align t)])
 
   (setq tabulated-list-padding 2)
-  (setq tabulated-list-sort-key (cons "Window" nil))
+  (setq tabulated-list-sort-key (cons "Domain" nil))
   (add-hook 'tabulated-list-revert-hook #'cma-table--populate nil t)
   (tabulated-list-init-header)
   (setq buffer-read-only t)
@@ -87,38 +87,42 @@ Keybindings:
 ;;; Data population
 
 (defun cma-table--populate ()
-  "Populate table from `cma list --json'."
+  "Populate table from `cma list --json'.
+Agents with the same non-empty domain are grouped together; agents with
+no domain (empty string or absent key) are rendered flat in agent_id order."
   (let* ((agents (cma--call "list" "--json"))
-         ;; Sort by window ID then by session start time
+         ;; Sort: domain first (so same-domain agents are contiguous), then agent_id
          (sorted (sort (copy-sequence (or agents '()))
                        (lambda (a b)
-                         (let ((id-a (or (alist-get 'agent_id a) ""))
-                               (id-b (or (alist-get 'agent_id b) ""))
-                               (time-a (or (alist-get 'session_started a) ""))
-                               (time-b (or (alist-get 'session_started b) "")))
-                           (if (string= id-a id-b)
-                               (string< time-a time-b)
-                             (string< id-a id-b))))))
-         (prev-window nil)
+                         (let ((dom-a (or (alist-get 'domain a) ""))
+                               (dom-b (or (alist-get 'domain b) ""))
+                               (id-a  (or (alist-get 'agent_id a) ""))
+                               (id-b  (or (alist-get 'agent_id b) "")))
+                           (if (string= dom-a dom-b)
+                               (string< id-a id-b)
+                             (string< dom-a dom-b))))))
+         (prev-domain nil)
          (entries nil))
     (dolist (agent sorted)
-      (let* ((window-id (or (alist-get 'window_id agent) ""))
-             (is-child (and prev-window (string= window-id prev-window))))
+      (let* ((domain (or (alist-get 'domain agent) ""))
+             (is-child (and (not (string-empty-p domain))
+                            prev-domain
+                            (string= domain prev-domain))))
         (push (cma-table--agent-to-entry agent is-child) entries)
-        (setq prev-window window-id)))
+        (setq prev-domain (if (string-empty-p domain) nil domain))))
     (setq tabulated-list-entries (nreverse entries))))
 
 (defun cma-table--agent-to-entry (agent is-child)
   "Convert AGENT alist to tabulated-list entry.
-IS-CHILD adds indentation prefix for child agents."
+IS-CHILD adds indentation prefix indicating the agent shares a domain group."
   (let* ((agent-id (or (alist-get 'agent_id agent)
                        (alist-get 'session_id agent) ; legacy fallback
                        "unknown"))
-         (name (or (alist-get 'name agent) ""))
+         (title (or (alist-get 'title agent) (alist-get 'name agent) (alist-get 'agent_id agent) ""))
+         (domain (or (alist-get 'domain agent) ""))
          (status-str (or (alist-get 'status agent) "unknown"))
          (cwd (or (alist-get 'cwd agent) ""))
          (model (or (alist-get 'model_name agent) ""))
-         (pane-id (or (alist-get 'pane_id agent) "—"))
          (git-branch (alist-get 'git_branch agent))
          (context-pct (alist-get 'context_used agent))
          (duration (or (alist-get 'duration agent) ""))
@@ -141,8 +145,8 @@ IS-CHILD adds indentation prefix for child agents."
                 ((string= status-str "completed") "🔵")
                 ((string= status-str "failed") "🔴")
                 (t "⚪")))
-         ;; Display name with indentation for children
-         (display-name (if is-child (concat "|-> " name) name))
+         ;; Indentation for domain-grouped children
+         (display-title (if is-child (concat "|-> " title) title))
          ;; Context percentage
          (ctx-str (if (and context-pct (> context-pct 0))
                       (format "%.1f%%" context-pct)
@@ -165,21 +169,21 @@ IS-CHILD adds indentation prefix for child agents."
     (list agent-id  ; agent_id is the stable primary key from launch time
           (if row-face
               (vector icon
-                      (propertize pane-id 'face row-face)
-                      (propertize display-name 'face row-face)
+                      (propertize domain 'face row-face)
+                      (propertize display-title 'face row-face)
+                      (propertize ctx-str 'face row-face)
                       (propertize location 'face row-face)
                       (propertize display-status 'face row-face)
                       (propertize (upcase model) 'face row-face)
-                      (propertize duration 'face row-face)
-                      (propertize ctx-str 'face row-face))
+                      (propertize duration 'face row-face))
             (vector icon
-                    pane-id
-                    display-name
+                    domain
+                    display-title
+                    ctx-str
                     location
                     display-status
                     (upcase model)
-                    duration
-                    ctx-str)))))
+                    duration)))))
 
 ;;; Refresh timer
 

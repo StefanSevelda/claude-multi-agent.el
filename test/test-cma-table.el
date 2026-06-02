@@ -26,7 +26,7 @@
                       (waiting_for_input . nil)))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry)))
-        (expect (aref vec 4) :to-equal "RUNNING")))
+        (expect (aref vec 5) :to-equal "RUNNING")))
 
     (it "shows PERMISSION status for permission_prompt"
       (let* ((agent '((session_id . "s2")
@@ -39,7 +39,7 @@
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry)))
         ;; Status column should say PERMISSION
-        (expect (substring-no-properties (aref vec 4))
+        (expect (substring-no-properties (aref vec 5))
                 :to-equal "PERMISSION")))
 
     (it "shows QUESTION status for elicitation_dialog"
@@ -52,7 +52,7 @@
                       (notification_type . "elicitation_dialog")))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry)))
-        (expect (substring-no-properties (aref vec 4))
+        (expect (substring-no-properties (aref vec 5))
                 :to-equal "QUESTION")))
 
     (it "shows IDLE status for idle_prompt"
@@ -65,7 +65,7 @@
                       (notification_type . "idle_prompt")))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry)))
-        (expect (substring-no-properties (aref vec 4))
+        (expect (substring-no-properties (aref vec 5))
                 :to-equal "IDLE")))
 
     (it "applies permission face (red) for permission_prompt"
@@ -78,7 +78,7 @@
                       (notification_type . "permission_prompt")))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry))
-             (status-cell (aref vec 4)))
+             (status-cell (aref vec 5)))
         (expect (get-text-property 0 'face status-cell)
                 :to-equal 'cma-table-face-permission)))
 
@@ -92,7 +92,7 @@
                       (notification_type . "elicitation_dialog")))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry))
-             (status-cell (aref vec 4)))
+             (status-cell (aref vec 5)))
         (expect (get-text-property 0 'face status-cell)
                 :to-equal 'cma-table-face-elicitation)))
 
@@ -106,7 +106,7 @@
                       (notification_type . "idle_prompt")))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry))
-             (status-cell (aref vec 4)))
+             (status-cell (aref vec 5)))
         (expect (get-text-property 0 'face status-cell)
                 :to-equal 'cma-table-face-idle)))
 
@@ -119,7 +119,7 @@
                       (waiting_for_input . nil)))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry))
-             (status-cell (aref vec 4)))
+             (status-cell (aref vec 5)))
         (expect (get-text-property 0 'face status-cell)
                 :to-equal nil)))
 
@@ -133,7 +133,7 @@
                       (notification_type . "auth_success")))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry)))
-        (expect (aref vec 4) :to-equal "WAITING-INPUT")))
+        (expect (aref vec 5) :to-equal "WAITING-INPUT")))
 
     (it "indents child agent name"
       (let* ((agent '((session_id . "child-1")
@@ -156,7 +156,7 @@
                       (git_branch . "feat/auth")))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry)))
-        (expect (aref vec 3) :to-equal "my-project (feat/auth)")))
+        (expect (aref vec 4) :to-equal "my-project (feat/auth)")))
 
     (it "shows context percentage"
       (let* ((agent '((session_id . "ctx-1")
@@ -168,7 +168,7 @@
                       (context_used . 75.5)))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry)))
-        (expect (aref vec 7) :to-equal "75.5%")))
+        (expect (aref vec 3) :to-equal "75.5%")))
 
     (it "uses agent_id as table entry id (primary key)"
       (let* ((agent '((agent_id . "my-agent")
@@ -202,7 +202,7 @@
                       (notification_type . "permission_prompt")))
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry))
-             (status-cell (aref vec 4)))
+             (status-cell (aref vec 5)))
         (expect (get-text-property 0 'face status-cell)
                 :to-equal nil)))
 
