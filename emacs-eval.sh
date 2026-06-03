@@ -9,12 +9,6 @@
 #   4. lsof fallback: query the running emacs --daemon process
 #   5. emacsclient default (no --socket-name) — works when $TMPDIR is not sandboxed
 
-if [ $# -eq 0 ]; then
-    echo "Usage: $0 '<elisp-expression>'"
-    echo "Example: $0 '(message \"Hello from Claude\")'"
-    exit 1
-fi
-
 UID_NUM=$(id -u)
 
 _find_socket() {
@@ -56,17 +50,25 @@ _find_socket() {
     echo ""
 }
 
-SOCKET=$(_find_socket)
-
-if [ -n "$SOCKET" ]; then
-    emacsclient --socket-name="$SOCKET" --eval "$1" 2>&1
-else
-    # Fall back to emacsclient default lookup (works when $TMPDIR is not sandboxed)
-    result=$(emacsclient --eval "$1" 2>&1)
-    status=$?
-    echo "$result"
-    if [ $status -ne 0 ] && echo "$result" | grep -q "can't find socket"; then
-        echo "Hint: set EMACS_SOCKET=<path> or start Emacs with (server-start)" >&2
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    if [ $# -eq 0 ]; then
+        echo "Usage: $0 '<elisp-expression>'"
+        echo "Example: $0 '(message \"Hello from Claude\")'"
+        exit 1
     fi
-    exit $status
+
+    SOCKET=$(_find_socket)
+
+    if [ -n "$SOCKET" ]; then
+        emacsclient --socket-name="$SOCKET" --eval "$1" 2>&1
+    else
+        # Fall back to emacsclient default lookup (works when $TMPDIR is not sandboxed)
+        result=$(emacsclient --eval "$1" 2>&1)
+        status=$?
+        echo "$result"
+        if [ $status -ne 0 ] && echo "$result" | grep -q "can't find socket"; then
+            echo "Hint: set EMACS_SOCKET=<path> or start Emacs with (server-start)" >&2
+        fi
+        exit $status
+    fi
 fi
