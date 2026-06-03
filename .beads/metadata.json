@@ -1,0 +1,5 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_database": "beads_claude_multi_agent_el"
+}
