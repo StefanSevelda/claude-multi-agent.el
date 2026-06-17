@@ -209,6 +209,28 @@ After killing, offers to clean up associated worktrees."
         (cma-table/refresh)))))
 
 ;;;###autoload
+(defun cma/reassign-agent ()
+  "Reassign an agent to a different domain via cma CLI.
+Prompts for agent and target domain (empty to ungroup)."
+  (interactive)
+  (let* ((agents (cma--call "list" "--json"))
+         (names (mapcar (lambda (a)
+                          (cons (format "%s [%s]"
+                                        (or (alist-get 'title a) (alist-get 'name a) "")
+                                        (alist-get 'agent_id a))
+                                (alist-get 'agent_id a)))
+                        agents))
+         (choice (completing-read "Reassign agent: " names nil t))
+         (agent-id (cdr (assoc choice names)))
+         (domain (string-trim (completing-read "Domain (empty to ungroup): "
+                                               (cma--existing-domains) nil nil))))
+    (when agent-id
+      (cma--call-raw "reassign" agent-id domain)
+      (message "Reassigned %s -> domain \"%s\"" agent-id domain)
+      (when (fboundp 'cma-table/refresh)
+        (cma-table/refresh)))))
+
+;;;###autoload
 (defun cma/save-session ()
   "Save current agent session via cma CLI."
   (interactive)

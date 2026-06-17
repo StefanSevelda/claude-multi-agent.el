@@ -698,5 +698,82 @@ Use `claude-multi-layout/reset-time' to restore real time."
   (setq claude-multi-layout--time-override nil)
   (message "Time override cleared — using real time"))
 
+;; ──────────────────────────────────────────────────────────────────────────────
+;; Triage Filter Shortcuts — sparse-tree views over triage.org
+;; ──────────────────────────────────────────────────────────────────────────────
+
+(defun claude-multi-layout--triage-sparse-tree (pred label)
+  "Build a sparse tree in triage.org showing entries where PRED returns non-nil.
+PRED is called at each org entry with no args.  LABEL appears in the echo area."
+  (let* ((path (expand-file-name "triage.org" claude-multi-layout--org-base-dir))
+         (buf  (or (find-buffer-visiting path)
+                   (and (file-exists-p path) (find-file-noselect path)))))
+    (unless buf
+      (user-error "triage.org not found at %s" path))
+    (let ((win (get-buffer-window buf t)))
+      (if win (select-window win) (pop-to-buffer buf)))
+    (with-current-buffer buf
+      (org-overview)
+      (let ((count 0))
+        (org-map-entries
+         (lambda ()
+           (when (funcall pred)
+             (cl-incf count)
+             (org-show-context 'match)))
+         nil 'file)
+        (message "Triage filter [%s]: %d entries" label count)))))
+
+;;;###autoload
+(defun claude-multi-layout/triage-filter-week ()
+  "Sparse tree: TODO/INPROGRESS entries with DEADLINE within the current ISO week."
+  (interactive)
+  (let* ((now        (claude-multi-layout--now))
+         (dow        (string-to-number (format-time-string "%u" now))) ; 1=Mon..7=Sun
+         (today-days (time-to-days now))
+         (week-start (- today-days (1- dow)))
+         (week-end   (+ today-days (- 7 dow))))
+    (claude-multi-layout--triage-sparse-tree
+     (lambda ()
+       (let ((state (org-get-todo-state))
+             (dl    (org-entry-get nil "DEADLINE")))
+         (and (member state '("TODO" "INPROGRESS"))
+              dl
+              (let ((d (time-to-days (org-time-string-to-time dl))))
+                (and (>= d week-start) (<= d week-end))))))
+     "this week")))
+
+;;;###autoload
+(defun claude-multi-layout/triage-filter-no-date ()
+  "Sparse tree: TODO/INPROGRESS entries that have no DEADLINE."
+  (interactive)
+  (claude-multi-layout--triage-sparse-tree
+   (lambda ()
+     (and (member (org-get-todo-state) '("TODO" "INPROGRESS"))
+          (not (org-entry-get nil "DEADLINE"))))
+   "no date"))
+
+;;;###autoload
+(defun claude-multi-layout/triage-filter-postpone ()
+  "Sparse tree: all POSTPONE entries."
+  (interactive)
+  (claude-multi-layout--triage-sparse-tree
+   (lambda ()
+     (string= (org-get-todo-state) "POSTPONE"))
+   "POSTPONE"))
+
+;;;###autoload
+(defun claude-multi-layout/triage-filter-clear ()
+  "Clear triage sparse-tree filter, expanding all entries."
+  (interactive)
+  (let* ((path (expand-file-name "triage.org" claude-multi-layout--org-base-dir))
+         (buf  (find-buffer-visiting path)))
+    (if (null buf)
+        (message "Triage filter: triage.org not open")
+      (let ((win (get-buffer-window buf t)))
+        (if win (select-window win) (pop-to-buffer buf)))
+      (with-current-buffer buf
+        (org-show-all))
+      (message "Triage filter: cleared"))))
+
 (provide 'claude-multi-layout)
 ;;; claude-multi-layout.el ends here

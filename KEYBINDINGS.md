@@ -28,6 +28,15 @@ All keybindings are under the `SPC c m` prefix (Space → c → m).
 - `SPC c m l` - **List worktrees** - Show all git worktrees
 - `SPC c m ?` - **Debug status matching** - Diagnostic info for status tracking
 
+### Triage Filters (under `SPC c m T`)
+
+These apply a sparse-tree filter to `triage.org`, folding everything except matching entries.
+
+- `SPC c m T w` - **This week** - TODO/INPROGRESS with DEADLINE within current ISO week (Mon–Sun)
+- `SPC c m T n` - **No date** - TODO/INPROGRESS entries with no DEADLINE
+- `SPC c m T p` - **POSTPONE** - All POSTPONE entries
+- `SPC c m T c` - **Clear filter** - Expand all entries (reset view)
+
 ### Code Review (under `SPC c m r`)
 - `SPC c m r r` - **Review agent changes** - Start reviewing agent's code changes
 - `SPC c m r a` - **Accept current diff** - Accept the current diff hunk

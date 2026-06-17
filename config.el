@@ -310,6 +310,11 @@ Prompts for working directory (default ~/projects), domain, and model."
          :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
          :desc "Next diff file"         "n" #'claude-multi/next-diff-file)
         :desc "Triage (agenda + agent)" "t" #'claude-multi-layout/start-agenda
+        (:prefix ("T" . "triage filter")
+         :desc "This week (due)"        "w" #'claude-multi-layout/triage-filter-week
+         :desc "No date"                "n" #'claude-multi-layout/triage-filter-no-date
+         :desc "POSTPONE"               "p" #'claude-multi-layout/triage-filter-postpone
+         :desc "Clear filter"           "c" #'claude-multi-layout/triage-filter-clear)
         (:prefix ("y" . "layout")
          :desc "Agenda layout"           "a" #'claude-multi-layout/start-agenda
          :desc "Focus layout"            "f" #'claude-multi-layout/focus

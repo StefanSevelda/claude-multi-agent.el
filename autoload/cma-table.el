@@ -38,7 +38,8 @@
   (let ((map (make-sparse-keymap)))
     (define-key map (kbd "RET") #'cma-table/focus-agent)
     (define-key map (kbd "f") #'cma-table/focus-agent)
-    (define-key map (kbd "r") #'cma-table/rename-agent)
+    (define-key map (kbd "r") #'cma-table/reassign-agent)
+    (define-key map (kbd "R") #'cma-table/rename-agent)
     (define-key map (kbd "g") #'cma-table/refresh)
     map)
   "Keymap for `cma-table-mode'.")
@@ -51,7 +52,8 @@ Grouped by domain — agents sharing a domain appear together.
 Keybindings:
   f / RET - Focus on agent at point
   K       - Kill agent at point
-  r       - Rename agent at point
+  r       - Reassign agent to a different domain (rename domain)
+  R       - Rename agent at point
   g       - Refresh table"
 
   (setq tabulated-list-format
@@ -76,7 +78,8 @@ Keybindings:
     (evil-define-key 'normal cma-table-mode-map
       (kbd "f") #'cma-table/focus-agent
       (kbd "RET") #'cma-table/focus-agent
-      (kbd "r") #'cma-table/rename-agent
+      (kbd "r") #'cma-table/reassign-agent
+      (kbd "R") #'cma-table/rename-agent
       (kbd "g") #'cma-table/refresh
       (kbd "K") #'cma-table/kill-agent)
     (evil-normalize-keymaps))
@@ -256,6 +259,19 @@ After killing, offers to clean up associated worktree."
           (cma--call-raw "rename" agent-id new-name)
           (cma-table/refresh)
           (message "Renamed to %s" new-name))))))
+
+;;;###autoload
+(defun cma-table/reassign-agent ()
+  "Reassign the agent at point to a different domain."
+  (interactive)
+  (let ((agent-id (tabulated-list-get-id)))
+    (if (not agent-id)
+        (message "No agent at point")
+      (let ((domain (string-trim (completing-read "Domain (empty to ungroup): "
+                                                  (cma--existing-domains) nil nil))))
+        (cma--call-raw "reassign" agent-id domain)
+        (cma-table/refresh)
+        (message "Reassigned %s -> domain \"%s\"" agent-id domain)))))
 
 ;;;###autoload
 (defun cma-table/refresh ()
