@@ -220,7 +220,7 @@ Progress buffer pinned at bottom."
                  "--task" "workview-triage-all"
                  "--dir" (expand-file-name "~/projects/workview")
                  "--prompt" "/workview:workview-triage-all"
-                 "--model" "sonnet"
+                 "--model" "haiku"
                  "--json")
     (message "Agenda: cma not available — skipping agent spawn")))
 
