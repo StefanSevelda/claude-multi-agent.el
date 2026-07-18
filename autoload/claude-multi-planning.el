@@ -16,6 +16,7 @@
 ;;; Code:
 
 (require 'org)
+(require 'org-capture)
 
 (defgroup claude-multi-planning nil
   "Org-based task triage for Claude Multi-Agent."
@@ -52,9 +53,15 @@
 ;;; Export on save
 
 (defun claude-multi-planning--under-planning-dir-p (file)
-  "Return non-nil if FILE lives under `claude-multi-planning-directory'."
+  "Return non-nil if FILE lives under `claude-multi-planning-directory'.
+Uses a plain expanded-path prefix comparison rather than
+`file-in-directory-p', which refuses to answer (always returns nil)
+when the directory does not yet exist on disk — a real possibility
+the first time a planning file is created."
   (and file
-       (file-in-directory-p file (expand-file-name claude-multi-planning-directory))))
+       (string-prefix-p
+        (file-name-as-directory (expand-file-name claude-multi-planning-directory))
+        (expand-file-name file))))
 
 ;;;###autoload
 (defun claude-multi-planning--maybe-setup-buffer ()
@@ -224,8 +231,9 @@ buffer afterwards so the export-on-save hook fires."
 ;;;###autoload
 (defun claude-multi-planning-setup-capture ()
   "Register the \"t\" capture template (Task -> Inbox) if none exists yet.
-Call after org (and `org-capture') has loaded, e.g. from `config.el'."
-  (require 'org-capture)
+`org-capture' is already required at module load time, so this is safe
+to call any time after `claude-multi-planning' has loaded, e.g. from
+`config.el'."
   (unless (assoc "t" org-capture-templates)
     (add-to-list 'org-capture-templates
                  `("t" "Task → Inbox" entry
