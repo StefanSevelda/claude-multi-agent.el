@@ -7,9 +7,9 @@
 ;; pinned as a bottom side-window via display-buffer-alist.
 ;;
 ;; Layouts:
-;;   - agenda:       week file (45%) | triage.org (55%)
-;;   - focus:        today schedule (45%) | triage.org (55%) + progress (bottom)
-;;   - email-triage: email-triage.org (full width) + progress (bottom)
+;;   - agenda:       week file (45%) | tasks.org (55%)
+;;   - focus:        today schedule (45%) | tasks.org (55%) + progress (bottom)
+;;   - email-triage: tasks.org (full width) + progress (bottom)
 ;;   - project:      neotree | magit-status (toggle: changed-files | magit-diff)
 ;;   - exit:         restore normal window configuration
 ;;
@@ -187,16 +187,16 @@ NAME is the layout symbol.  PROGRESS-HEIGHT overrides the default 0.25."
 
 ;;;###autoload
 (defun claude-multi-layout/agenda ()
-  "Activate agenda layout: weekly plan (left 45%) | triage.org (right 55%).
+  "Activate agenda layout: weekly plan (left 45%) | tasks.org (right 55%).
 Progress buffer pinned at bottom."
   (interactive)
   (let* ((week-file  (claude-multi-layout--current-week-file))
          (week-buf   (claude-multi-layout--find-or-create-org-file week-file))
-         (triage-buf (claude-multi-layout--find-or-create-org-file "triage.org")))
+         (triage-buf (claude-multi-layout--find-or-create-org-file "tasks.org")))
     (claude-multi-layout--setup-layout 'agenda)
     ;; Left: weekly plan (full height)
     (switch-to-buffer week-buf)
-    ;; Right: triage.org at ~55% width
+    ;; Right: tasks.org at ~55% width
     (let ((right-win (split-window-right (floor (* (window-width) 0.45)))))
       (select-window right-win)
       (switch-to-buffer triage-buf)
@@ -405,13 +405,13 @@ the caller (focus layout) creates overlays before starting the timer."
 (defun claude-multi-layout/focus ()
   "Activate focus layout for daily focused work.
 Top-left: today's schedule (derived read-only buffer) at 45% width.
-Top-right: triage.org for task reference at 55% width.
+Top-right: tasks.org for task reference at 55% width.
 Bottom: progress buffer at 50% height."
   (interactive)
   ;; Clear any existing time indicator overlays from previous invocation
   (claude-multi-layout--clear-time-overlays)
   (let* ((today-buf (claude-multi-layout--derive-today-buffer))
-         (triage-buf (claude-multi-layout--find-or-create-org-file "triage.org")))
+         (triage-buf (claude-multi-layout--find-or-create-org-file "tasks.org")))
     (claude-multi-layout--setup-layout 'focus 0.5 40)
     ;; Top-left: today's schedule
     (switch-to-buffer today-buf)
@@ -431,16 +431,16 @@ Bottom: progress buffer at 50% height."
 
 ;;;###autoload
 (defun claude-multi-layout/email-triage ()
-  "Activate email-triage layout: email-triage.org (full width) + progress bottom.
-Use for standalone inbox cleanup sessions."
+  "Activate email-triage layout: tasks.org (full width) + progress bottom.
+Use for standalone email triage sessions (email tasks live in tasks.org)."
   (interactive)
-  (let* ((email-buf (claude-multi-layout--find-or-create-org-file "email-triage.org")))
+  (let* ((email-buf (claude-multi-layout--find-or-create-org-file "tasks.org")))
     (claude-multi-layout--setup-layout 'email-triage 0.3)
     (switch-to-buffer email-buf)
     (claude-multi-layout--disable-olivetti-in-buffer email-buf)
     ;; Re-pin progress at the bottom after the main buffer is shown.
     (claude-multi-layout--ensure-progress-visible 0.3)
-    (message "Layout: email-triage (email-triage.org)")))
+    (message "Layout: email-triage (tasks.org)")))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Project Layout — neotree + magit (toggleable status/diff + changed files)
@@ -653,7 +653,7 @@ Valid names: agenda, focus, email-triage, project, exit."
   "Revert all triage/planning org file buffers from disk.
 Useful after workview CLI regenerates files."
   (interactive)
-  (let ((files '("triage.org" "email-triage.org"))
+  (let ((files '("tasks.org"))
         (reverted 0))
     ;; Also check for current week file
     (push (claude-multi-layout--current-week-file) files)
@@ -699,17 +699,17 @@ Use `claude-multi-layout/reset-time' to restore real time."
   (message "Time override cleared — using real time"))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
-;; Triage Filter Shortcuts — sparse-tree views over triage.org
+;; Triage Filter Shortcuts — sparse-tree views over tasks.org
 ;; ──────────────────────────────────────────────────────────────────────────────
 
 (defun claude-multi-layout--triage-sparse-tree (pred label)
-  "Build a sparse tree in triage.org showing entries where PRED returns non-nil.
+  "Build a sparse tree in tasks.org showing entries where PRED returns non-nil.
 PRED is called at each org entry with no args.  LABEL appears in the echo area."
-  (let* ((path (expand-file-name "triage.org" claude-multi-layout--org-base-dir))
+  (let* ((path (expand-file-name "tasks.org" claude-multi-layout--org-base-dir))
          (buf  (or (find-buffer-visiting path)
                    (and (file-exists-p path) (find-file-noselect path)))))
     (unless buf
-      (user-error "triage.org not found at %s" path))
+      (user-error "tasks.org not found at %s" path))
     (let ((win (get-buffer-window buf t)))
       (if win (select-window win) (pop-to-buffer buf)))
     (with-current-buffer buf
@@ -765,10 +765,10 @@ PRED is called at each org entry with no args.  LABEL appears in the echo area."
 (defun claude-multi-layout/triage-filter-clear ()
   "Clear triage sparse-tree filter, expanding all entries."
   (interactive)
-  (let* ((path (expand-file-name "triage.org" claude-multi-layout--org-base-dir))
+  (let* ((path (expand-file-name "tasks.org" claude-multi-layout--org-base-dir))
          (buf  (find-buffer-visiting path)))
     (if (null buf)
-        (message "Triage filter: triage.org not open")
+        (message "Triage filter: tasks.org not open")
       (let ((win (get-buffer-window buf t)))
         (if win (select-window win) (pop-to-buffer buf)))
       (with-current-buffer buf
