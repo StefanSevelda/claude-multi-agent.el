@@ -775,5 +775,128 @@ PRED is called at each org entry with no args.  LABEL appears in the echo area."
         (org-show-all))
       (message "Triage filter: cleared"))))
 
+;;; ──────────────────────────────────────────────────────────────────────────────
+;;; This Week Toggle — move item at point in/out of * This Week
+;;; ──────────────────────────────────────────────────────────────────────────────
+
+(defun claude-multi-layout--triage-item-source ()
+  "Return the :SOURCE: property of the org entry at point, or nil."
+  (org-entry-get nil "SOURCE"))
+
+(defun claude-multi-layout--triage-section-at-point ()
+  "Return the name of the top-level (* level) section containing point, or nil."
+  (save-excursion
+    (let ((level (org-current-level)))
+      (when level
+        ;; Walk up to level 1
+        (while (and (> (org-current-level) 1)
+                    (org-up-heading-safe)))
+        (when (= (org-current-level) 1)
+          (org-get-heading t t t t))))))
+
+(defun claude-multi-layout--triage-source-to-group (source)
+  "Map a :SOURCE: value to its ** group heading name."
+  (pcase source
+    ("jira"   "Jira")
+    ("gtasks" "GTasks")
+    ("gmail"  "Email")
+    (_        "GTasks")))
+
+(defun claude-multi-layout--triage-find-or-create-group (section-name group-name)
+  "In triage.org, find the ** GROUP-NAME heading under * SECTION-NAME.
+Creates the group if it doesn't exist.  Leaves point at the end of the group."
+  (goto-char (point-min))
+  ;; Find the top-level section
+  (unless (re-search-forward (concat "^\\* " (regexp-quote section-name) "\\b") nil t)
+    (user-error "Section * %s not found in triage.org" section-name))
+  (let ((section-end (save-excursion
+                       (or (re-search-forward "^\\* " nil t)
+                           (point-max)))))
+    ;; Look for the group heading within this section
+    (let ((group-re (concat "^\\*\\* " (regexp-quote group-name) "\\b")))
+      (if (re-search-forward group-re section-end t)
+          ;; Found: move to end of this group (before next ** or end of section)
+          (let ((group-start (point)))
+            (end-of-line)
+            (if (re-search-forward "^\\*\\* \\|^\\* " section-end t)
+                (goto-char (match-beginning 0))
+              (goto-char section-end))
+            ;; Back over trailing blank lines
+            (while (and (> (point) group-start)
+                        (looking-back "\n\n" 2))
+              (backward-char)))
+        ;; Not found: append group at end of section
+        (goto-char section-end)
+        (while (and (> (point) (point-min))
+                    (looking-back "\n" 1))
+          (backward-char))
+        (insert (concat "\n\n** " group-name "\n"))))))
+
+;;;###autoload
+(defun claude-multi-layout/triage-toggle-this-week ()
+  "Toggle the org entry at point between * This Week and * Backlog.
+When point is on a *** item inside * This Week, moves it to * Backlog.
+When point is on any item elsewhere, moves it into the correct ** group
+inside * This Week (Jira / GTasks / Email) based on its :SOURCE: property.
+Bound to SPC c w t in triage.org buffers."
+  (interactive)
+  (unless (derived-mode-p 'org-mode)
+    (user-error "Not in an org-mode buffer"))
+  (let* ((triage-path (expand-file-name "triage.org" claude-multi-layout--org-base-dir))
+         (buf (find-buffer-visiting triage-path)))
+    (unless (and buf (eq (current-buffer) buf))
+      (user-error "Command must be run in triage.org"))
+    (save-excursion
+      ;; Navigate to the item heading (*** or ** level)
+      (org-back-to-heading t)
+      (let* ((level     (org-current-level))
+             (section   (claude-multi-layout--triage-section-at-point))
+             (source    (claude-multi-layout--triage-item-source))
+             (in-week   (string= section "This Week")))
+        (when (= level 1)
+          (user-error "Point is on a top-level section heading, not an item"))
+        (when (and (= level 2) in-week)
+          (user-error "Point is on a group header (** Jira/GTasks/Email), not an item"))
+        ;; Cut the subtree
+        (org-cut-subtree)
+        (if in-week
+            ;; Moving OUT → append to * Backlog at ** level
+            (progn
+              (goto-char (point-min))
+              (unless (re-search-forward "^\\* Backlog\\b" nil t)
+                (user-error "* Backlog section not found"))
+              (end-of-line)
+              (let ((section-end (save-excursion
+                                   (or (re-search-forward "^\\* " nil t)
+                                       (point-max)))))
+                (goto-char section-end)
+                (while (and (> (point) (point-min)) (looking-back "\n" 1))
+                  (backward-char))
+                (insert "\n")
+                ;; Demote from *** to ** if needed (backlog uses ** items)
+                (let ((pos (point)))
+                  (org-paste-subtree 2)
+                  (ignore pos)))
+              (message "Moved to * Backlog"))
+          ;; Moving IN → insert into the right ** group in * This Week
+          (let* ((group (claude-multi-layout--triage-source-to-group source)))
+            (claude-multi-layout--triage-find-or-create-group "This Week" group)
+            (insert "\n")
+            ;; Promote/demote to *** level (grouped items live at level 3)
+            (org-paste-subtree 3)
+            (message "Moved to * This Week / ** %s" group)))))))
+
+;;;###autoload
+(defun claude-multi-layout/triage-setup-keys ()
+  "Install triage-specific keybindings into the current org-mode buffer.
+Called when triage.org is opened in the agenda layout."
+  (when (and (derived-mode-p 'org-mode)
+             (string= (buffer-name) "triage.org"))
+    (map! :map (current-local-map)
+          :leader
+          "c w t" #'claude-multi-layout/triage-toggle-this-week)))
+
+(add-hook 'org-mode-hook #'claude-multi-layout/triage-setup-keys)
+
 (provide 'claude-multi-layout)
 ;;; claude-multi-layout.el ends here

@@ -1,4 +1,8 @@
 {
+  "enabledPlugins": {
+    "elisp-lsp@elisp-lsp-marketplace": true,
+    "code-review@claude-plugins-official": true
+  },
   "permissions": {
     "allow": [
       "Bash",
