@@ -104,7 +104,65 @@ Returns the buffer.  Caller is responsible for killing it."
               (with-current-buffer buf
                 (claude-multi-planning--export-buffer))
               (expect 'start-process :not :to-have-been-called))
+          (kill-buffer buf))))
+
+    (it "dispatches week files to the week export script"
+      (let ((buf (test-planning--make-buffer
+                   "week-export-buf"
+                   (expand-file-name "week-2026-W30.org" test-planning--dir)
+                   #'org-mode))
+            (claude-multi-planning-week-export-script "~/org/scripts/week-to-state.py"))
+        (unwind-protect
+            (progn
+              (spy-on 'start-process :and-return-value 'fake-proc)
+              (spy-on 'process-put)
+              (spy-on 'set-process-sentinel)
+              (with-current-buffer buf
+                (claude-multi-planning--export-buffer))
+              (let ((call-args (spy-calls-args-for 'start-process 0)))
+                (expect (nth 3 call-args)
+                        :to-equal (expand-file-name "~/org/scripts/week-to-state.py"))))
           (kill-buffer buf)))))
+
+  (describe "claude-multi-planning--week-file-p"
+
+    (it "matches week plan files"
+      (expect (claude-multi-planning--week-file-p "/x/week-2026-W30.org") :to-be-truthy))
+
+    (it "rejects tasks.org, review files, and nil"
+      (expect (claude-multi-planning--week-file-p "/x/tasks.org") :to-be nil)
+      (expect (claude-multi-planning--week-file-p "/x/week-review-2026-W30.org") :to-be nil)
+      (expect (claude-multi-planning--week-file-p nil) :to-be nil)))
+
+  (describe "claude-multi-planning--flip-checkbox-line"
+
+    (it "ticks an open block done"
+      (expect (claude-multi-planning--flip-checkbox-line
+               "- [ ] 09:00-10:15 [DEEP] DATP-29: Enrich data contract" "X")
+              :to-equal "- [X] 09:00-10:15 [DEEP] DATP-29: Enrich data contract"))
+
+    (it "ticks an open block skipped"
+      (expect (claude-multi-planning--flip-checkbox-line
+               "- [ ] 14:30-14:45 [SHALLOW] email/Slack" "-")
+              :to-equal "- [-] 14:30-14:45 [SHALLOW] email/Slack"))
+
+    (it "toggles back to open when already at the target state"
+      (expect (claude-multi-planning--flip-checkbox-line
+               "- [X] 09:00-10:15 [DEEP] Something" "X")
+              :to-equal "- [ ] 09:00-10:15 [DEEP] Something"))
+
+    (it "switches directly between done and skipped"
+      (expect (claude-multi-planning--flip-checkbox-line
+               "- [X] 09:00-10:15 [DEEP] Something" "-")
+              :to-equal "- [-] 09:00-10:15 [DEEP] Something"))
+
+    (it "returns nil for OOO and non-block lines"
+      (expect (claude-multi-planning--flip-checkbox-line
+               "- 11:30-15:30 [OOO] Out of office" "X") :to-be nil)
+      (expect (claude-multi-planning--flip-checkbox-line
+               "*** Monday 2026-07-20 [1/3]" "X") :to-be nil)
+      (expect (claude-multi-planning--flip-checkbox-line
+               "      a note line" "X") :to-be nil)))
 
   (describe "claude-multi-planning--export-sentinel"
 

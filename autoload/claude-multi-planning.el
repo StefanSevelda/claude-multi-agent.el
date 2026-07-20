@@ -40,6 +40,11 @@
   :type 'file
   :group 'claude-multi-planning)
 
+(defcustom claude-multi-planning-week-export-script "~/org/scripts/week-to-state.py"
+  "Python script that exports a week org file's focus blocks to state.json."
+  :type 'file
+  :group 'claude-multi-planning)
+
 (defcustom claude-multi-planning-autosave-interval 300
   "Seconds between automatic saves of modified planning org buffers."
   :type 'integer
@@ -82,13 +87,25 @@ under `claude-multi-planning-directory'."
         (message "claude-multi-planning: export failed (exit %d) for %s"
                  exit-code (process-get process 'claude-multi-planning-file))))))
 
+(defun claude-multi-planning--week-file-p (file)
+  "Return non-nil if FILE is a week plan file (week-YYYY-Www.org)."
+  (and file
+       (string-match-p "\\`week-[0-9]\\{4\\}-W[0-9]\\{2\\}\\.org\\'"
+                       (file-name-nondirectory file))))
+
 ;;;###autoload
 (defun claude-multi-planning--export-buffer ()
-  "Export the current buffer's file to its .jsonl sidecar via Python.
-Runs asynchronously; intended as a buffer-local `after-save-hook'."
+  "Export the current buffer's file to its machine sidecar via Python.
+Week files (week-YYYY-Www.org) export their focus-block ticks to
+state.json via `claude-multi-planning-week-export-script'; every other
+planning org file exports to its .jsonl sidecar.  Runs asynchronously;
+intended as a buffer-local `after-save-hook'."
   (when buffer-file-name
     (let* ((file (expand-file-name buffer-file-name))
-           (script (expand-file-name claude-multi-planning-export-script))
+           (script (expand-file-name
+                    (if (claude-multi-planning--week-file-p file)
+                        claude-multi-planning-week-export-script
+                      claude-multi-planning-export-script)))
            (proc (start-process "claude-multi-planning-export"
                                  nil "python3" script file)))
       (process-put proc 'claude-multi-planning-file file)
@@ -240,6 +257,55 @@ to call any time after `claude-multi-planning' has loaded, e.g. from
                    (file+headline ,claude-multi-planning-tasks-file "Inbox")
                    "* TODO %?\n")
                  t)))
+
+;;; Focus-block ticking (week files)
+
+(defconst claude-multi-planning--block-line-regexp
+  "^- \\[\\([ X-]\\)\\] [0-9]\\{2\\}:[0-9]\\{2\\}-[0-9]\\{2\\}:[0-9]\\{2\\} "
+  "Matches a tickable focus-block line; group 1 is the checkbox state.")
+
+(defun claude-multi-planning--flip-checkbox-line (line target)
+  "Pure helper: return LINE with its checkbox set to TARGET (a string).
+If the checkbox is already TARGET, revert it to \" \" (toggle).  Returns
+nil when LINE is not a tickable focus-block line."
+  (when (string-match claude-multi-planning--block-line-regexp line)
+    (let* ((current (match-string 1 line))
+           (new (if (string= current target) " " target)))
+      (concat "- [" new "]" (substring line (+ (match-beginning 1) 2))))))
+
+(defun claude-multi-planning--tick-block (target)
+  "Set the focus-block checkbox on the current line to TARGET and save.
+Updates the day heading's [a/b] cookie and saves the buffer silently so
+the export-on-save hook pushes the tick into state.json."
+  (let* ((line (buffer-substring-no-properties
+                (line-beginning-position) (line-end-position)))
+         (new (claude-multi-planning--flip-checkbox-line line target)))
+    (unless new
+      (user-error "Not on a focus-block line"))
+    (let ((col (current-column))
+          (inhibit-read-only t))
+      (delete-region (line-beginning-position) (line-end-position))
+      (insert new)
+      (move-to-column col))
+    (when (derived-mode-p 'org-mode)
+      (save-excursion
+        (ignore-errors (org-back-to-heading t))
+        (ignore-errors (org-update-checkbox-count))))
+    (when buffer-file-name
+      (let ((inhibit-message t))
+        (save-buffer)))))
+
+;;;###autoload
+(defun claude-multi-planning-tick-block-done ()
+  "Tick the focus block at point as completed ([X]); tick again to undo."
+  (interactive)
+  (claude-multi-planning--tick-block "X"))
+
+;;;###autoload
+(defun claude-multi-planning-tick-block-skipped ()
+  "Tick the focus block at point as skipped ([-]); tick again to undo."
+  (interactive)
+  (claude-multi-planning--tick-block "-"))
 
 ;;; Buffer hook wiring
 

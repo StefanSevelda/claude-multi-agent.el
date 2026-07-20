@@ -21,6 +21,8 @@
 (require 'cma-core)
 (require 'cma-table)
 
+(declare-function claude-multi-planning--tick-block "claude-multi-planning")
+
 (defvar claude-multi-layout--current nil
   "Name of the currently active layout (symbol or nil).")
 
@@ -251,7 +253,7 @@ indented continuation lines."
     (save-excursion
       (goto-char start-pos)
       (while (re-search-forward
-              "^- \\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\) "
+              "^- \\(?:\\[[ X-]\\] \\)?\\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\)-\\([0-9]\\{2\\}\\):\\([0-9]\\{2\\}\\) "
               nil t)
         (let* ((range-start (+ (* (string-to-number (match-string 1)) 60)
                                (string-to-number (match-string 2))))
@@ -275,7 +277,7 @@ indented continuation lines."
 (defun claude-multi-layout--derive-today-buffer ()
   "Extract today's schedule from the week file into a read-only derived buffer.
 Returns the buffer.  The buffer is not backed by a file — it is a
-transient mirror rendered from the `** Focus Blocks & Work Assignments`
+transient mirror rendered from the `* Focus Blocks & Work Assignments`
 section of the current week's planning file."
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-path (expand-file-name week-file claude-multi-layout--org-base-dir))
@@ -296,11 +298,11 @@ section of the current week's planning file."
                                 (insert-file-contents week-path)
                                 (buffer-string)))
                 (day-content nil))
-            ;; Find the *** {Day} heading inside ** Focus Blocks & Work Assignments
+            ;; Find the *** {Day} heading inside * Focus Blocks & Work Assignments
             (with-temp-buffer
               (insert week-content)
               (goto-char (point-min))
-              (when (re-search-forward "^\\*\\* Focus Blocks" nil t)
+              (when (re-search-forward "^\\*+ Focus Blocks" nil t)
                 (when (re-search-forward
                        (format "^\\*\\*\\* %s" (regexp-quote dow-full)) nil t)
                   (beginning-of-line)
@@ -323,9 +325,126 @@ section of the current week's planning file."
                 ;; Apply time indicator to the current block
                 (claude-multi-layout--apply-assignment-indicator
                  assignments-start now-hour now-min))))))
+      (claude-multi-layout-today-mode 1)
       (setq buffer-read-only t)
       (goto-char (point-min)))
     today-buf))
+
+;; ──────────────────────────────────────────────────────────────────────────────
+;; Today Schedule interactivity — tick focus blocks from the derived view
+;; ──────────────────────────────────────────────────────────────────────────────
+
+(defvar claude-multi-layout-today-mode-map
+  (let ((map (make-sparse-keymap)))
+    (define-key map (kbd "x")   #'claude-multi-layout/today-tick-done)
+    (define-key map (kbd "s")   #'claude-multi-layout/today-tick-skipped)
+    (define-key map (kbd "RET") #'claude-multi-layout/today-jump-to-week-file)
+    (define-key map (kbd "g")   #'claude-multi-layout/today-refresh)
+    map)
+  "Keymap for `claude-multi-layout-today-mode'.")
+
+(define-minor-mode claude-multi-layout-today-mode
+  "Minor mode for the *Today Schedule* buffer.
+Tick the focus block at point without leaving the derived view:
+\\{claude-multi-layout-today-mode-map}"
+  :lighter " Today"
+  :keymap claude-multi-layout-today-mode-map)
+
+;; Let the tick keys win over evil's normal-state bindings (Doom).
+(with-eval-after-load 'evil
+  (when (fboundp 'evil-make-overriding-map)
+    (evil-make-overriding-map claude-multi-layout-today-mode-map 'normal)))
+
+(defun claude-multi-layout--line-time-range ()
+  "Return the \"HH:MM-HH:MM\" range of the focus-block line at point, or nil."
+  (let ((line (buffer-substring-no-properties
+               (line-beginning-position) (line-end-position))))
+    (when (string-match
+           "^- \\(?:\\[[ X-]\\] \\)?\\([0-9]\\{2\\}:[0-9]\\{2\\}-[0-9]\\{2\\}:[0-9]\\{2\\}\\)"
+           line)
+      (match-string 1 line))))
+
+(defun claude-multi-layout--with-week-block (time-range fn)
+  "Call FN in the week file buffer with point on today's TIME-RANGE block.
+Signals a `user-error' when the file, today's day section, or the block
+cannot be found.  Returns FN's value; point/buffer are restored."
+  (let* ((week-file (claude-multi-layout--current-week-file))
+         (week-path (expand-file-name week-file claude-multi-layout--org-base-dir))
+         (buf (or (find-buffer-visiting week-path)
+                  (and (file-exists-p week-path) (find-file-noselect week-path))))
+         (dow (format-time-string "%A" (claude-multi-layout--now))))
+    (unless buf
+      (user-error "Week file not found: %s" week-path))
+    (with-current-buffer buf
+      (save-excursion
+        (goto-char (point-min))
+        (unless (re-search-forward "^\\*+ Focus Blocks" nil t)
+          (user-error "No focus blocks section in %s" week-file))
+        (unless (re-search-forward
+                 (format "^\\*\\{2,3\\} %s\\b" (regexp-quote dow)) nil t)
+          (user-error "No %s section in %s" dow week-file))
+        (let ((limit (save-excursion
+                       (forward-line 1)
+                       (if (re-search-forward "^\\*\\{1,3\\} " nil t)
+                           (line-beginning-position)
+                         (point-max)))))
+          (unless (re-search-forward
+                   (format "^- \\(?:\\[[ X-]\\] \\)?%s " (regexp-quote time-range))
+                   limit t)
+            (user-error "Block %s not found under %s in %s"
+                        time-range dow week-file))
+          (beginning-of-line)
+          (funcall fn))))))
+
+(defun claude-multi-layout--today-tick (target)
+  "Tick today's block at point as TARGET in the week file, then refresh."
+  (let ((range (claude-multi-layout--line-time-range)))
+    (unless range
+      (user-error "Not on a focus-block line"))
+    (claude-multi-layout--with-week-block
+     range (lambda () (claude-multi-planning--tick-block target)))
+    (claude-multi-layout/today-refresh)
+    ;; put point back on the same block
+    (goto-char (point-min))
+    (re-search-forward (regexp-quote range) nil t)
+    (beginning-of-line)))
+
+;;;###autoload
+(defun claude-multi-layout/today-tick-done ()
+  "Tick the focus block at point as completed ([X]); tick again to undo.
+Writes through to the week file; saving exports the tick to state.json."
+  (interactive)
+  (claude-multi-layout--today-tick "X"))
+
+;;;###autoload
+(defun claude-multi-layout/today-tick-skipped ()
+  "Tick the focus block at point as skipped ([-]); tick again to undo.
+Writes through to the week file; saving exports the tick to state.json."
+  (interactive)
+  (claude-multi-layout--today-tick "-"))
+
+;;;###autoload
+(defun claude-multi-layout/today-jump-to-week-file ()
+  "Jump from the Today Schedule to the matching line in the week file."
+  (interactive)
+  (let ((range (claude-multi-layout--line-time-range)))
+    (unless range
+      (user-error "Not on a focus-block line"))
+    (let (target-buf target-pos)
+      (claude-multi-layout--with-week-block
+       range (lambda ()
+               (setq target-buf (current-buffer)
+                     target-pos (point))))
+      (pop-to-buffer target-buf)
+      (goto-char target-pos))))
+
+;;;###autoload
+(defun claude-multi-layout/today-refresh ()
+  "Re-derive the Today Schedule buffer and refresh time indicators."
+  (interactive)
+  (claude-multi-layout--clear-time-overlays)
+  (claude-multi-layout--derive-today-buffer)
+  (claude-multi-layout--apply-week-file-indicator))
 
 (defun claude-multi-layout--clear-time-overlays ()
   "Remove all time indicator overlays from all buffers."
@@ -337,7 +456,7 @@ section of the current week's planning file."
 (defun claude-multi-layout--apply-week-file-indicator ()
   "Apply the time indicator overlay to today's focus block in the week file.
 Finds the current focus block line under today's `*** {Day}` heading
-in the `** Focus Blocks & Work Assignments` section and highlights it."
+in the `* Focus Blocks & Work Assignments` section and highlights it."
   (let* ((week-file (claude-multi-layout--current-week-file))
          (week-path (expand-file-name week-file claude-multi-layout--org-base-dir))
          (week-buf (find-buffer-visiting week-path))
@@ -349,7 +468,7 @@ in the `** Focus Blocks & Work Assignments` section and highlights it."
       (with-current-buffer week-buf
         (save-excursion
           (goto-char (point-min))
-          (when (re-search-forward "^\\*\\* Focus Blocks" nil t)
+          (when (re-search-forward "^\\*+ Focus Blocks" nil t)
             (when (re-search-forward
                    (format "^\\*\\*\\* %s" (regexp-quote dow-full)) nil t)
               (let ((section-start (point))

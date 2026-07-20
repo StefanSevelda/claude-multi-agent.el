@@ -147,6 +147,8 @@ Available methods: popup, markdown, modeline, sound"
 (declare-function claude-multi-planning-to-inbox "claude-multi-planning")
 (declare-function claude-multi-planning-triage-inbox "claude-multi-planning")
 (declare-function claude-multi-planning-plan-week "claude-multi-planning")
+(declare-function claude-multi-planning-tick-block-done "claude-multi-planning")
+(declare-function claude-multi-planning-tick-block-skipped "claude-multi-planning")
 
 ;; Global variables (surviving)
 (defvar claude-multi--progress-buffer nil
@@ -344,6 +346,8 @@ Prompts for working directory (default ~/projects), domain, and model."
          :desc "Refile to Inbox"         "i" #'claude-multi-planning-to-inbox
          :desc "Triage inbox"            "t" #'claude-multi-planning-triage-inbox
          :desc "Plan week"               "p" #'claude-multi-planning-plan-week
+         :desc "Tick block done"         "x" #'claude-multi-planning-tick-block-done
+         :desc "Tick block skipped"      "X" #'claude-multi-planning-tick-block-skipped
          :desc "Toggle autosave"         "a" #'claude-multi-planning-autosave-mode))))
 
 ;; Quick g d toggle for project layout in magit buffers
