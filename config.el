@@ -139,6 +139,14 @@ Available methods: popup, markdown, modeline, sound"
 (declare-function cma/worktree-prune "cma-commands")
 (declare-function cma/worktree-clean "cma-commands")
 (declare-function cma-modeline--start "cma-modeline")
+(declare-function claude-multi-planning-setup-capture "claude-multi-planning")
+(declare-function claude-multi-planning-autosave-mode "claude-multi-planning")
+(declare-function claude-multi-planning-to-week "claude-multi-planning")
+(declare-function claude-multi-planning-to-backlog "claude-multi-planning")
+(declare-function claude-multi-planning-to-someday "claude-multi-planning")
+(declare-function claude-multi-planning-to-inbox "claude-multi-planning")
+(declare-function claude-multi-planning-triage-inbox "claude-multi-planning")
+(declare-function claude-multi-planning-plan-week "claude-multi-planning")
 
 ;; Global variables (surviving)
 (defvar claude-multi--progress-buffer nil
@@ -163,12 +171,13 @@ Available methods: popup, markdown, modeline, sound"
         (load (expand-file-name "cma-modeline.el" autoload-dir) nil 'nomessage))
     (error (message ">>> CLAUDE-MULTI: Error loading cma modules: %S" err)))
 
-  ;; Surviving modules (ediff, mcp, layout)
+  ;; Surviving modules (ediff, mcp, layout, planning)
   (condition-case err
       (progn
         (load (expand-file-name "claude-multi-mcp.el" autoload-dir) nil t)
         (load (expand-file-name "claude-multi-ediff.el" autoload-dir) nil t)
-        (load (expand-file-name "claude-multi-layout.el" autoload-dir) nil t))
+        (load (expand-file-name "claude-multi-layout.el" autoload-dir) nil t)
+        (load (expand-file-name "claude-multi-planning.el" autoload-dir) nil t))
     (error (message ">>> CLAUDE-MULTI: Error loading surviving modules: %S" err)))
 
   ;; Startup guard
@@ -177,7 +186,12 @@ Available methods: popup, markdown, modeline, sound"
 
   ;; Start cma modeline
   (when (fboundp 'cma-modeline--start)
-    (cma-modeline--start)))
+    (cma-modeline--start))
+
+  ;; Register the planning capture template (safe to call once org has loaded;
+  ;; org itself is a hard dependency of claude-multi-planning.el)
+  (when (fboundp 'claude-multi-planning-setup-capture)
+    (claude-multi-planning-setup-capture)))
 
 ;; Interactive commands — thin wrappers calling cma-commands.el
 
@@ -322,7 +336,15 @@ Prompts for working directory (default ~/projects), domain, and model."
          :desc "Toggle status/diff"      "d" #'claude-multi-layout/project-toggle-diff
          :desc "Exit layout"             "e" #'claude-multi-layout/exit
          :desc "Switch layout"           "l" #'claude-multi-layout/switch
-         :desc "Revert files"            "r" #'claude-multi-layout/revert-files))))
+         :desc "Revert files"            "r" #'claude-multi-layout/revert-files)
+        (:prefix ("P" . "planning")
+         :desc "Refile to This Week"     "w" #'claude-multi-planning-to-week
+         :desc "Refile to Backlog"       "b" #'claude-multi-planning-to-backlog
+         :desc "Refile to Someday"       "s" #'claude-multi-planning-to-someday
+         :desc "Refile to Inbox"         "i" #'claude-multi-planning-to-inbox
+         :desc "Triage inbox"            "t" #'claude-multi-planning-triage-inbox
+         :desc "Plan week"               "p" #'claude-multi-planning-plan-week
+         :desc "Toggle autosave"         "a" #'claude-multi-planning-autosave-mode))))
 
 ;; Quick g d toggle for project layout in magit buffers
 (with-eval-after-load 'magit
