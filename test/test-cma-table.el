@@ -216,7 +216,113 @@
              (entry (cma-table--agent-to-entry agent nil))
              (vec (cadr entry)))
         ;; Should use 🟢 for running, not 🟡 for waiting
-        (expect (aref vec 0) :to-equal "🟢")))))
+        (expect (aref vec 0) :to-equal "🟢")))
+
+    (it "nests a handoff child with an -> prefix"
+      (let* ((agent '((agent_id . "child")
+                      (name . "child")
+                      (parent_id . "parent")
+                      (status . "running")
+                      (cwd . "/tmp/project")
+                      (waiting_for_input . nil)))
+             (entry (cma-table--agent-to-entry agent nil 1))
+             (vec (cadr entry)))
+        (expect (aref vec 2) :to-equal "-> child")))
+
+    (it "indents deeper handoff generations"
+      (let* ((agent '((agent_id . "grandchild")
+                      (name . "grandchild")
+                      (parent_id . "child")
+                      (status . "running")
+                      (cwd . "/tmp/project")
+                      (waiting_for_input . nil)))
+             (entry (cma-table--agent-to-entry agent nil 2))
+             (vec (cadr entry)))
+        (expect (aref vec 2) :to-equal "  -> grandchild")))
+
+    (it "handoff nesting outranks the domain-sibling marker"
+      (let* ((agent '((agent_id . "child")
+                      (name . "child")
+                      (parent_id . "parent")
+                      (domain . "auth")
+                      (status . "running")
+                      (cwd . "/tmp/project")
+                      (waiting_for_input . nil)))
+             (entry (cma-table--agent-to-entry agent t 1))
+             (vec (cadr entry)))
+        (expect (aref vec 2) :to-equal "-> child"))))
+
+  (describe "cma-table--order-by-parent"
+
+    (it "keeps parentless agents flat in given order"
+      (let* ((members '(((agent_id . "a")) ((agent_id . "b"))))
+             (ordered (cma-table--order-by-parent members)))
+        (expect (mapcar (lambda (p) (alist-get 'agent_id (car p))) ordered)
+                :to-equal '("a" "b"))
+        (expect (mapcar #'cdr ordered) :to-equal '(0 0))))
+
+    (it "moves a handoff child directly below its parent"
+      (let* ((members '(((agent_id . "child") (parent_id . "zeta"))
+                        ((agent_id . "other"))
+                        ((agent_id . "zeta"))))
+             (ordered (cma-table--order-by-parent members)))
+        (expect (mapcar (lambda (p) (alist-get 'agent_id (car p))) ordered)
+                :to-equal '("other" "zeta" "child"))
+        (expect (mapcar #'cdr ordered) :to-equal '(0 0 1))))
+
+    (it "nests grandchildren one level deeper"
+      (let* ((members '(((agent_id . "child") (parent_id . "root"))
+                        ((agent_id . "grandchild") (parent_id . "child"))
+                        ((agent_id . "root"))))
+             (ordered (cma-table--order-by-parent members)))
+        (expect (mapcar (lambda (p) (alist-get 'agent_id (car p))) ordered)
+                :to-equal '("root" "child" "grandchild"))
+        (expect (mapcar #'cdr ordered) :to-equal '(0 1 2))))
+
+    (it "treats an unknown parent as a root"
+      (let* ((members '(((agent_id . "orphan") (parent_id . "gone"))))
+             (ordered (cma-table--order-by-parent members)))
+        (expect (mapcar #'cdr ordered) :to-equal '(0))))
+
+    (it "emits every agent exactly once on a parent cycle"
+      (let* ((members '(((agent_id . "a") (parent_id . "b"))
+                        ((agent_id . "b") (parent_id . "a"))))
+             (ordered (cma-table--order-by-parent members)))
+        (expect (sort (mapcar (lambda (p) (alist-get 'agent_id (car p))) ordered)
+                      #'string<)
+                :to-equal '("a" "b")))))
+
+  (describe "cma-table--populate"
+
+    (it "orders and marks handoff children inside their domain group"
+      (spy-on 'cma--call :and-return-value
+              '(((agent_id . "beta-child")
+                 (name . "beta-child")
+                 (parent_id . "alpha")
+                 (domain . "auth")
+                 (status . "running")
+                 (cwd . "/tmp/p")
+                 (waiting_for_input . nil))
+                ((agent_id . "alpha")
+                 (name . "alpha")
+                 (domain . "auth")
+                 (status . "running")
+                 (cwd . "/tmp/p")
+                 (waiting_for_input . nil))
+                ((agent_id . "solo")
+                 (name . "solo")
+                 (status . "running")
+                 (cwd . "/tmp/p")
+                 (waiting_for_input . nil))))
+      (with-temp-buffer
+        (cma-table--populate)
+        (let ((ids (mapcar #'car tabulated-list-entries))
+              (titles (mapcar (lambda (e)
+                                (substring-no-properties (aref (cadr e) 2)))
+                              tabulated-list-entries)))
+          ;; No-domain agents sort first, then the auth group parent-first.
+          (expect ids :to-equal '("solo" "alpha" "beta-child"))
+          (expect titles :to-equal '("solo" "alpha" "-> beta-child")))))))
 
 (provide 'test-cma-table)
 ;;; test-cma-table.el ends here

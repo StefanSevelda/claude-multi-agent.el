@@ -92,7 +92,10 @@ Keybindings:
 (defun cma-table--populate ()
   "Populate table from `cma list --json'.
 Agents with the same non-empty domain are grouped together; agents with
-no domain (empty string or absent key) are rendered flat in agent_id order."
+no domain (empty string or absent key) are rendered flat in agent_id order.
+Within a domain group, agents spawned through a session handoff (their
+`parent_id' names another agent in the group) are ordered directly below
+their parent and rendered with a \"-> \" nesting marker."
   (let* ((agents (cma--call "list" "--json"))
          ;; Sort: domain first (so same-domain agents are contiguous), then agent_id
          (sorted (sort (copy-sequence (or agents '()))
@@ -104,20 +107,66 @@ no domain (empty string or absent key) are rendered flat in agent_id order."
                            (if (string= dom-a dom-b)
                                (string< id-a id-b)
                              (string< dom-a dom-b))))))
-         (prev-domain nil)
          (entries nil))
-    (dolist (agent sorted)
-      (let* ((domain (or (alist-get 'domain agent) ""))
-             (is-child (and (not (string-empty-p domain))
-                            prev-domain
-                            (string= domain prev-domain))))
-        (push (cma-table--agent-to-entry agent is-child) entries)
-        (setq prev-domain (if (string-empty-p domain) nil domain))))
+    (dolist (group (cma-table--domain-groups sorted))
+      (let ((first t))
+        (dolist (pair (cma-table--order-by-parent (cdr group)))
+          (let* ((agent (car pair))
+                 (depth (cdr pair))
+                 (is-child (and (not (string-empty-p (car group)))
+                                (not first)
+                                (zerop depth))))
+            (push (cma-table--agent-to-entry agent is-child depth) entries)
+            (setq first nil)))))
     (setq tabulated-list-entries (nreverse entries))))
 
-(defun cma-table--agent-to-entry (agent is-child)
+(defun cma-table--domain-groups (sorted)
+  "Split SORTED agents into contiguous (DOMAIN . AGENTS) groups.
+SORTED must already be ordered by domain.  Agents with an empty domain
+form one group too, so handoff nesting applies to them as well — they
+just never get the \"|-> \" domain-sibling marker."
+  (let ((groups nil))
+    (dolist (agent sorted)
+      (let ((domain (or (alist-get 'domain agent) "")))
+        (if (and groups (string= domain (caar groups)))
+            (push agent (cdar groups))
+          (push (cons domain (list agent)) groups))))
+    (nreverse (mapcar (lambda (g) (cons (car g) (nreverse (cdr g))))
+                      groups))))
+
+(defun cma-table--order-by-parent (members)
+  "Order MEMBERS so handoff children follow their parent.
+Returns a list of (AGENT . DEPTH) pairs.  An agent whose `parent_id' is
+empty or names no agent in MEMBERS is a root (depth 0); each child is
+emitted right after its parent with depth incremented.  Cycles are broken
+by the visited set: an agent is emitted at most once."
+  (let* ((ids (mapcar (lambda (a) (or (alist-get 'agent_id a) "")) members))
+         (visited (make-hash-table :test #'equal))
+         (result nil))
+    (cl-labels ((emit (agent depth)
+                  (let ((id (or (alist-get 'agent_id agent) "")))
+                    (unless (gethash id visited)
+                      (puthash id t visited)
+                      (push (cons agent depth) result)
+                      (dolist (child members)
+                        (when (string= (or (alist-get 'parent_id child) "") id)
+                          (emit child (1+ depth))))))))
+      (dolist (agent members)
+        (let ((parent (or (alist-get 'parent_id agent) "")))
+          (when (or (string-empty-p parent)
+                    (not (member parent ids)))
+            (emit agent 0))))
+      ;; Anything left is part of a parent cycle — render it flat.
+      (dolist (agent members)
+        (emit agent 0)))
+    (nreverse result)))
+
+(defun cma-table--agent-to-entry (agent is-child &optional depth)
   "Convert AGENT alist to tabulated-list entry.
-IS-CHILD adds indentation prefix indicating the agent shares a domain group."
+IS-CHILD adds a \"|-> \" prefix indicating the agent shares a domain group.
+DEPTH, when non-nil and positive, marks a session-handoff child: the title
+gets an indented \"-> \" prefix (one indent level per handoff hop), which
+outranks the domain-sibling marker."
   (let* ((agent-id (or (alist-get 'agent_id agent)
                        (alist-get 'session_id agent) ; legacy fallback
                        "unknown"))
@@ -148,8 +197,12 @@ IS-CHILD adds indentation prefix indicating the agent shares a domain group."
                 ((string= status-str "completed") "🔵")
                 ((string= status-str "failed") "🔴")
                 (t "⚪")))
-         ;; Indentation for domain-grouped children
-         (display-title (if is-child (concat "|-> " title) title))
+         ;; Indentation: handoff nesting outranks domain-sibling grouping
+         (display-title (cond
+                         ((and depth (> depth 0))
+                          (concat (make-string (* 2 (1- depth)) ?\s) "-> " title))
+                         (is-child (concat "|-> " title))
+                         (t title)))
          ;; Context percentage
          (ctx-str (if (and context-pct (> context-pct 0))
                       (format "%.1f%%" context-pct)
