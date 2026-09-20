@@ -66,6 +66,28 @@ An Emacs plugin for managing multiple [[https://github.com/anthropics/claude-cod
 
 5. Restart Emacs
 
+*** Via Nix (pinned, for machine setup)
+
+The repository is also a Nix flake. Its default package is the Doom module
+directory itself (=config.el=, =init.el=, =packages.el=, =autoload/=), so a
+consumer can build a pinned copy and symlink it in as
+=$DOOMDIR/modules/tools/claude-multi=:
+
+#+begin_src shell
+nix build .#           # result/ is the module tree
+ln -s "$(readlink -f result)" ~/.config/emacs/.doom.d/modules/tools/claude-multi
+#+end_src
+
+In practice this is consumed by the =local-setup= repository: it pins this
+flake as an input and its =nix/modules/doom-emacs.nix= home-manager module
+creates that symlink on every =hm-switch= — pointing at the working copy in
+=~/projects/claude-multi-agent.el= when one exists (instant edit–reload while
+developing), and at the pinned Nix build otherwise.
+
+Checks mirror the local tooling and run with =nix flake check=:
+syntax/paren validation plus the Buttercup suite (=make test=), with the test
+dependencies coming from nixpkgs instead of ad-hoc =git clone=.
+
 ** Usage
 
 *** Starting a Session

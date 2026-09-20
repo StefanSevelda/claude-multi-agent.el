@@ -38,6 +38,18 @@ Agents are represented as **JSON alists** from `cma list --json`, not Elisp stru
 | `autoload/cma-commands.el` | ~361 | Interactive commands: spawn, kill, focus, rename, session, worktree |
 | `autoload/cma-table.el` | ~341 | `tabulated-list-mode` view populated from `cma list --json` |
 
+### Nix Packaging
+
+`flake.nix` packages the Doom module for machine setup: the default package is
+the module directory (`config.el`, `init.el`, `packages.el`, `autoload/`) —
+deliberately not an ELPA-style build, because Doom consumes this as a module,
+not a package. `nix flake check` runs paren validation plus the Buttercup
+suite with test dependencies from nixpkgs. The `local-setup` repo pins this
+flake as an input; its `nix/modules/doom-emacs.nix` links the module into
+`$DOOMDIR/modules/tools/claude-multi` (working copy wins over the pinned build
+when `~/projects/claude-multi-agent.el` exists). When the set of files Doom
+loads changes, update `installPhase` and the checks in `flake.nix`.
+
 ### Key Design Patterns
 
 - **CLI-first**: Zero `shell-command-to-string` calls to `git` or `tmux` in Elisp — everything routes through `cma--call`/`cma--call-raw`
