@@ -2,26 +2,15 @@
 
 ## Project Overview
 
-Claude Multi-Agent is an Emacs Lisp plugin that enables parallel execution of multiple Claude Code agent instances with git worktree isolation. Each agent runs independently in its own kitty terminal window and optional git worktree.
+Claude Multi-Agent is an Emacs Lisp plugin exposing one user-facing surface: a sessions table (`cma-table-mode`) over the parallel Claude Code agents that the `cma` CLI manages in tmux panes, with git worktree isolation.
 
-All agent orchestration (spawning, killing, focusing, session management, worktree management) is handled by the **`cma` Go CLI binary**. Elisp is a thin presentation layer that calls `cma` via shell and displays results.
+All agent orchestration (spawning, killing, focusing, session management, worktree management) is handled by the **`cma` Go CLI binary**. Elisp is a thin presentation layer that calls `cma` via shell and displays results. Focusing an agent — from the table or via `SPC c m f` — selects its tmux pane and raises the hosting terminal app through `cma focus`; spawning does the same.
 
 ### Dependencies
 
 - **cma**: Go CLI binary for agent orchestration (required, [cma-agent-framework](https://github.com/StefanSevelda/cma-agent-framework))
-- **kitty**: Terminal emulator with remote control (required)
+- **tmux**: cma's default terminal backend — agents live as panes in the `cma` tmux session
 - **buttercup**: Testing framework (dev only)
-
-### Kitty Setup
-
-Enable remote control in `~/.config/kitty/kitty.conf`:
-
-```conf
-allow_remote_control yes
-listen_on unix:/tmp/kitty-claude
-```
-
-Reload kitty: `Ctrl+Shift+F5`
 
 ## Architecture
 
@@ -29,13 +18,13 @@ Reload kitty: `Ctrl+Shift+F5`
 
 | Repo | Language | Role |
 |------|----------|------|
-| `claude-multi-agent.el` (this repo) | Elisp | Presentation layer: keybindings, table view, ediff, MCP tools, layout |
-| `cma-agent-framework/cma` | Go | All agent orchestration: kitty, git, status, sessions, worktrees |
+| `claude-multi-agent.el` (this repo) | Elisp | Presentation layer: keybindings and the sessions table view |
+| `cma-agent-framework/cma` | Go | All agent orchestration: terminal (tmux), git, status, sessions, worktrees |
 
 ### Data Flow
 
 ```
-User keybinding → config.el → cma-commands.el → cma--call/cma--call-raw (cma-core.el) → cma binary → kitty/git
+User keybinding → config.el → cma-commands.el → cma--call/cma--call-raw (cma-core.el) → cma binary → tmux/git
 ```
 
 Agents are represented as **JSON alists** from `cma list --json`, not Elisp structs.
@@ -44,39 +33,30 @@ Agents are represented as **JSON alists** from `cma list --json`, not Elisp stru
 
 | File | Lines | Purpose |
 |------|-------|---------|
-| `config.el` | ~353 | Customization variables, module loading, keybindings, interactive command wrappers |
-| `autoload/cma-core.el` | ~81 | Bridge to `cma` binary: `cma--call` (JSON), `cma--call-raw` (string), `cma--call-async` |
-| `autoload/cma-commands.el` | ~281 | Interactive commands: spawn, kill, focus, rename, session, worktree |
-| `autoload/cma-table.el` | ~225 | `tabulated-list-mode` view populated from `cma list --json` |
-| `autoload/cma-modeline.el` | ~54 | Modeline indicator polling for waiting agents |
-| `autoload/claude-multi-ediff.el` | ~232 | Interactive diff review via Emacs ediff |
-| `autoload/claude-multi-mcp.el` | ~368 | MCP protocol tools (file, git, agent, diagnostics, selection) |
-| `autoload/claude-multi-layout.el` | ~771 | Tiling layout system (agenda, focus, project views) |
+| `config.el` | ~240 | Customization variables, module loading, keybindings, interactive command wrappers |
+| `autoload/cma-core.el` | ~84 | Bridge to `cma` binary: `cma--call` (JSON), `cma--call-raw` (string), `cma--call-async` |
+| `autoload/cma-commands.el` | ~361 | Interactive commands: spawn, kill, focus, rename, session, worktree |
+| `autoload/cma-table.el` | ~341 | `tabulated-list-mode` view populated from `cma list --json` |
 
 ### Key Design Patterns
 
-- **CLI-first**: Zero `shell-command-to-string` calls to `git` or `kitty` in Elisp — everything routes through `cma--call`/`cma--call-raw`
+- **CLI-first**: Zero `shell-command-to-string` calls to `git` or `tmux` in Elisp — everything routes through `cma--call`/`cma--call-raw`
 - **Alist-based agents**: Agents come from `cma list --json` as alists, accessed via `(alist-get 'field agent)`
 - **Thin wrappers**: Each interactive command in `config.el` is a one-liner delegating to `cma-commands.el`
-- **Table view**: `cma-table-mode` replaces the old org-mode progress buffer with a `tabulated-list-mode` view
-- **Modeline polling**: `cma-modeline.el` polls `cma list --json` every 5s for waiting agents
+- **Table view**: `cma-table-mode` is the plugin's single user-facing surface — a `tabulated-list-mode` sessions table with focus/kill/rename/reassign on the rows
 
 ### cma CLI Subcommands Used by Elisp
 
 | Elisp Call | cma Subcommand | Used In |
 |-----------|----------------|---------|
 | `cma--call "spawn" ...` | `cma spawn --task --dir --model --json` | cma-commands.el |
-| `cma--call "list" "--json"` | `cma list --json` | cma-commands.el, cma-table.el, ediff, mcp |
-| `cma--call-raw "kill" ...` | `cma kill SESSION_ID` | cma-commands.el |
-| `cma--call-raw "focus" ...` | `cma focus SESSION_ID` | cma-commands.el, mcp |
-| `cma--call-raw "rename" ...` | `cma rename SESSION_ID NAME` | cma-commands.el |
+| `cma--call "list" "--json"` | `cma list --json` | cma-commands.el, cma-table.el |
+| `cma--call-raw "kill" ...` | `cma kill SESSION_ID` | cma-commands.el, cma-table.el |
+| `cma--call-raw "focus" ...` | `cma focus SESSION_ID` | cma-commands.el, cma-table.el |
+| `cma--call-raw "rename" ...` | `cma rename SESSION_ID NAME` | cma-commands.el, cma-table.el |
+| `cma--call-raw "reassign" ...` | `cma reassign SESSION_ID DOMAIN` | cma-table.el |
 | `cma--call "session" ...` | `cma session save/restore/list/delete` | cma-commands.el |
 | `cma--call "worktree" ...` | `cma worktree list/create/remove` | cma-commands.el |
-| `cma--call "git" "changed-files" ...` | `cma git changed-files --dir --json` | ediff, layout |
-| `cma--call-raw "git" "diff" ...` | `cma git diff --dir` | ediff, mcp |
-| `cma--call-raw "git" "show" ...` | `cma git show REF --dir --output` | ediff |
-| `cma--call-raw "git" "checkout" ...` | `cma git checkout FILE --dir` | ediff |
-| `cma--call-raw "git" "status" ...` | `cma git status --dir` | mcp |
 
 ## Test Strategy
 
@@ -107,20 +87,18 @@ make install-test-deps   # Install buttercup + utility libs
 
 ### Test Coverage
 
-| Module | Test File | Tests |
-|--------|-----------|-------|
-| CMA Core (bridge) | test-simple.el | 9 |
-| CMA Commands | test-cma-commands.el | 22 |
-| Ediff (cma backend) | test-ediff.el | 26 |
-
-**Total**: 57 test cases across 3 test files
+| Module | Test File |
+|--------|-----------|
+| CMA Core (bridge) | test-simple.el |
+| CMA Commands | test-cma-commands.el |
+| CMA Table | test-cma-table.el |
 
 ### Testing Best Practices
 
 - Mock `cma--call`/`cma--call-raw` with `spy-on` — never shell out in tests
 - Test both success and failure paths
 - Use `spy-calls-args-for` to verify correct CLI args are passed
-- Use `before-each` to reset global state (`claude-multi--ediff-session`, etc.)
+- Use `before-each` to reset global state
 
 ## Code Quality Standards
 
@@ -128,9 +106,8 @@ make install-test-deps   # Install buttercup + utility libs
 
 Keep files under 800 lines. Current sizes are healthy:
 
-- `config.el`: ~353 lines
-- `autoload/claude-multi-layout.el`: ~771 lines (largest — monitor)
-- All others: under 400 lines
+- `config.el`: ~240 lines
+- All autoload modules: under 400 lines
 
 ### Code Organization
 

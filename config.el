@@ -47,76 +47,6 @@ This can be customized to use different binary names (e.g., \\='claude26\\=')."
   :type 'string
   :group 'claude-multi)
 
-(defcustom claude-multi-output-throttle-delay 0.5
-  "Delay in seconds between progress buffer updates to reduce flashing.
-Setting this higher (e.g., 1.0) will reduce flashing but make updates
-less responsive.  Setting to 0 disables throttling."
-  :type 'number
-  :group 'claude-multi)
-
-(defcustom claude-multi-notification-methods '(popup markdown modeline)
-  "List of notification methods to use when agents need input.
-Available methods: popup, markdown, modeline, sound"
-  :type '(set (const :tag "Popup notification" popup)
-              (const :tag "Markdown highlight" markdown)
-              (const :tag "Mode line indicator" modeline)
-              (const :tag "Audio alert" sound))
-  :group 'claude-multi)
-
-(defcustom claude-multi-buffer-cleanup 'auto-close-success
-  "How to handle terminal windows when agents complete.
-\\='keep-all - Keep all windows open (user closes manually)
-\\='auto-close-success - Auto-cleanup worktrees for successful agents
-\\='ask - Ask before closing terminal windows"
-  :type '(choice (const :tag "Keep all windows" keep-all)
-                 (const :tag "Auto-cleanup worktrees" auto-close-success)
-                 (const :tag "Ask before closing" ask))
-  :group 'claude-multi)
-
-(defcustom claude-multi-session-directory
-  (expand-file-name "claude-multi-sessions" user-emacs-directory)
-  "Directory for storing session files."
-  :type 'directory
-  :group 'claude-multi)
-
-(defcustom claude-multi-session-autosave-interval 300
-  "Seconds between automatic session saves (0 to disable)."
-  :type 'integer
-  :group 'claude-multi)
-
-(defcustom claude-multi-session-retention-days 30
-  "Number of days to keep old sessions (0 for unlimited)."
-  :type 'integer
-  :group 'claude-multi)
-
-(defcustom claude-multi-agent-color-schemes
-  '((1  :name "Bright Red"       :color "#FF4444" :text "#FFE5E5" :bg "#1a0808")
-    (2  :name "Cyan"             :color "#00D9FF" :text "#E0F8FF" :bg "#081418")
-    (3  :name "Medium Purple"    :color "#7B68EE" :text "#EDE8FF" :bg "#100a1a")
-    (4  :name "Dark Orange"      :color "#FF8C00" :text "#FFEEDD" :bg "#1a1208")
-    (5  :name "Spring Green"     :color "#00FF7F" :text "#E0FFE8" :bg "#081a0e")
-    (6  :name "Deep Pink"        :color "#FF1493" :text "#FFE0F0" :bg "#1a0814")
-    (7  :name "Gold"             :color "#FFD700" :text "#FFFAE0" :bg "#1a1808")
-    (8  :name "Blue Violet"      :color "#8A2BE2" :text "#EFE5FF" :bg "#0e081a")
-    (9  :name "Dark Turquoise"   :color "#00CED1" :text "#E0F5F7" :bg "#081416")
-    (10 :name "Tomato Red"       :color "#FF6347" :text "#FFE8E0" :bg "#1a0e08"))
-  "Color schemes for agents. Each scheme includes:
-- :name - Descriptive name
-- :color - Main accent color (cursor, tab, selection, border)
-- :text - Terminal text color
-- :bg - Terminal background color"
-  :type '(repeat (list integer
-                       (plist :key-type symbol :value-type string)))
-  :group 'claude-multi)
-
-;; Legacy compatibility - extract just colors for simple access
-(defcustom claude-multi-agent-colors
-  '("#FF4444" "#00D9FF" "#7B68EE" "#FF8C00" "#00FF7F"
-    "#FF1493" "#FFD700" "#8A2BE2" "#00CED1" "#FF6347")
-  "Colors to assign to agents for visual distinction (extracted from schemes)."
-  :type '(repeat color)
-  :group 'claude-multi)
-
 (defcustom claude-multi-progress-buffer-name "*Claude Multi-Agent Progress*"
   "Name of the central progress tracking buffer (table view)."
   :type 'string
@@ -138,17 +68,6 @@ Available methods: popup, markdown, modeline, sound"
 (declare-function cma/worktree-remove "cma-commands")
 (declare-function cma/worktree-prune "cma-commands")
 (declare-function cma/worktree-clean "cma-commands")
-(declare-function cma-modeline--start "cma-modeline")
-(declare-function claude-multi-planning-setup-capture "claude-multi-planning")
-(declare-function claude-multi-planning-autosave-mode "claude-multi-planning")
-(declare-function claude-multi-planning-to-week "claude-multi-planning")
-(declare-function claude-multi-planning-to-backlog "claude-multi-planning")
-(declare-function claude-multi-planning-to-someday "claude-multi-planning")
-(declare-function claude-multi-planning-to-inbox "claude-multi-planning")
-(declare-function claude-multi-planning-triage-inbox "claude-multi-planning")
-(declare-function claude-multi-planning-plan-week "claude-multi-planning")
-(declare-function claude-multi-planning-tick-block-done "claude-multi-planning")
-(declare-function claude-multi-planning-tick-block-skipped "claude-multi-planning")
 
 ;; Global variables (surviving)
 (defvar claude-multi--progress-buffer nil
@@ -169,31 +88,12 @@ Available methods: popup, markdown, modeline, sound"
       (progn
         (load (expand-file-name "cma-core.el" autoload-dir) nil 'nomessage)
         (load (expand-file-name "cma-commands.el" autoload-dir) nil 'nomessage)
-        (load (expand-file-name "cma-table.el" autoload-dir) nil 'nomessage)
-        (load (expand-file-name "cma-modeline.el" autoload-dir) nil 'nomessage))
+        (load (expand-file-name "cma-table.el" autoload-dir) nil 'nomessage))
     (error (message ">>> CLAUDE-MULTI: Error loading cma modules: %S" err)))
-
-  ;; Surviving modules (ediff, mcp, layout, planning)
-  (condition-case err
-      (progn
-        (load (expand-file-name "claude-multi-mcp.el" autoload-dir) nil t)
-        (load (expand-file-name "claude-multi-ediff.el" autoload-dir) nil t)
-        (load (expand-file-name "claude-multi-layout.el" autoload-dir) nil t)
-        (load (expand-file-name "claude-multi-planning.el" autoload-dir) nil t))
-    (error (message ">>> CLAUDE-MULTI: Error loading surviving modules: %S" err)))
 
   ;; Startup guard
   (unless (executable-find "cma")
-    (warn "CLAUDE-MULTI: cma binary not found on PATH. Install it to use agent orchestration."))
-
-  ;; Start cma modeline
-  (when (fboundp 'cma-modeline--start)
-    (cma-modeline--start))
-
-  ;; Register the planning capture template (safe to call once org has loaded;
-  ;; org itself is a hard dependency of claude-multi-planning.el)
-  (when (fboundp 'claude-multi-planning-setup-capture)
-    (claude-multi-planning-setup-capture)))
+    (warn "CLAUDE-MULTI: cma binary not found on PATH. Install it to use agent orchestration.")))
 
 ;; Interactive commands — thin wrappers calling cma-commands.el
 
@@ -319,44 +219,7 @@ Prompts for working directory (default ~/projects), domain, and model."
         :desc "Save session"            "S" #'claude-multi/save-session
         :desc "Restore session"         "R" #'claude-multi/restore-session
         :desc "List sessions"           "L" #'claude-multi/list-sessions
-        :desc "Delete session"          "D" #'claude-multi/delete-session
-        (:prefix ("r" . "review")
-         :desc "Review agent changes"   "r" #'claude-multi/review-agent-changes
-         :desc "Accept current diff"    "a" #'claude-multi/accept-current-diff
-         :desc "Reject current diff"    "x" #'claude-multi/reject-current-diff
-         :desc "Next diff file"         "n" #'claude-multi/next-diff-file)
-        :desc "Triage (agenda + agent)" "t" #'claude-multi-layout/start-agenda
-        (:prefix ("T" . "triage filter")
-         :desc "This week (due)"        "w" #'claude-multi-layout/triage-filter-week
-         :desc "No date"                "n" #'claude-multi-layout/triage-filter-no-date
-         :desc "POSTPONE"               "p" #'claude-multi-layout/triage-filter-postpone
-         :desc "Clear filter"           "c" #'claude-multi-layout/triage-filter-clear)
-        (:prefix ("y" . "layout")
-         :desc "Agenda layout"           "a" #'claude-multi-layout/start-agenda
-         :desc "Focus layout"            "f" #'claude-multi-layout/focus
-         :desc "Project layout"          "p" #'claude-multi-layout/project
-         :desc "Toggle status/diff"      "d" #'claude-multi-layout/project-toggle-diff
-         :desc "Exit layout"             "e" #'claude-multi-layout/exit
-         :desc "Switch layout"           "l" #'claude-multi-layout/switch
-         :desc "Revert files"            "r" #'claude-multi-layout/revert-files)
-        (:prefix ("P" . "planning")
-         :desc "Refile to This Week"     "w" #'claude-multi-planning-to-week
-         :desc "Refile to Backlog"       "b" #'claude-multi-planning-to-backlog
-         :desc "Refile to Someday"       "s" #'claude-multi-planning-to-someday
-         :desc "Refile to Inbox"         "i" #'claude-multi-planning-to-inbox
-         :desc "Triage inbox"            "t" #'claude-multi-planning-triage-inbox
-         :desc "Plan week"               "p" #'claude-multi-planning-plan-week
-         :desc "Tick block done"         "x" #'claude-multi-planning-tick-block-done
-         :desc "Tick block skipped"      "X" #'claude-multi-planning-tick-block-skipped
-         :desc "Toggle autosave"         "a" #'claude-multi-planning-autosave-mode))))
-
-;; Quick g d toggle for project layout in magit buffers
-(with-eval-after-load 'magit
-  (when (fboundp 'evil-define-key)
-    (evil-define-key 'normal magit-status-mode-map
-      (kbd "g d") #'claude-multi-layout--project-toggle-diff-if-active)
-    (evil-define-key 'normal magit-diff-mode-map
-      (kbd "g d") #'claude-multi-layout--project-toggle-diff-if-active)))
+        :desc "Delete session"          "D" #'claude-multi/delete-session)))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Auto-show progress buffer at startup
