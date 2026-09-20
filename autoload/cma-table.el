@@ -41,6 +41,7 @@
     (define-key map (kbd "r") #'cma-table/reassign-agent)
     (define-key map (kbd "R") #'cma-table/rename-agent)
     (define-key map (kbd "g") #'cma-table/refresh)
+    (define-key map (kbd "K") #'cma-table/kill-agent)
     map)
   "Keymap for `cma-table-mode'.")
 

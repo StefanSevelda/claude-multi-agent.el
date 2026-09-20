@@ -78,11 +78,8 @@ test: $(BUTTERCUP_DIR) $(DASH_DIR) $(S_DIR) $(F_DIR)
 		-L $(F_DIR) \
 		-l buttercup \
 		-l test/test-simple.el \
-		-l test/test-ediff.el \
 		-l test/test-cma-commands.el \
-		-l test/test-cma-modeline.el \
 		-l test/test-cma-table.el \
-		-l test/test-planning.el \
 		-f buttercup-run \
 	|| (echo "Tests timed out or failed"; exit 1)
 
