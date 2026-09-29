@@ -114,16 +114,15 @@ Prompts for working directory (default ~/projects), domain, and model."
 
 ;;;###autoload
 (defun claude-multi/open-progress ()
-  "Open the central progress tracking buffer (table view)."
+  "Open the central progress tracking buffer (table view) full-screen."
   (interactive)
   (let ((buf (get-buffer-create claude-multi-progress-buffer-name)))
     (setq claude-multi--progress-buffer buf)
     (with-current-buffer buf
       (unless (derived-mode-p 'cma-table-mode)
         (cma-table-mode))
-      (tabulated-list-revert)
-      (unless (get-buffer-window buf)
-        (display-buffer buf)))))
+      (tabulated-list-revert))
+    (switch-to-buffer buf)))
 
 ;;;###autoload
 (defun claude-multi/focus-agent ()
@@ -174,25 +173,14 @@ Prompts for working directory (default ~/projects), domain, and model."
   (cma/list-worktrees))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
-;; Progress Buffer Pinning (side-window)
+;; Progress Buffer — no popup/side-window rules
 ;; ──────────────────────────────────────────────────────────────────────────────
 
-;; Pin the progress buffer at the bottom.  Under Doom, register it with the
-;; popup system: a raw `display-buffer-alist' entry gets silently clobbered when
-;; `+popup-mode' rebuilds that variable from its own managed rule set, leaving
-;; the buffer as a transient window that `delete-other-windows' destroys on every
-;; layout switch.  Outside Doom, fall back to a dedicated bottom side-window.
-(if (fboundp 'set-popup-rule!)
-    (set-popup-rule! "^\\*Claude Multi-Agent Progress"
-      :side 'bottom :size 0.25 :ttl nil :quit nil :select nil :modeline t)
-  ;; Allow 1 bottom side-window slot for the progress buffer
-  (setq window-sides-slots '(nil nil 1 nil))
-  (add-to-list 'display-buffer-alist
-    `(,(regexp-quote (or (bound-and-true-p claude-multi-progress-buffer-name)
-                         "*Claude Multi-Agent Progress*"))
-      (display-buffer-in-side-window)
-      (side . bottom) (slot . 0) (window-height . 0.25)
-      (preserve-size . (nil . t)) (dedicated . t))))
+;; open-progress uses switch-to-buffer, so no display-buffer-alist entry is
+;; needed.  Under Doom, explicitly tell the popup system to treat this buffer
+;; as a regular window (not a popup) so it is never hijacked to the bottom.
+(when (fboundp 'set-popup-rule!)
+  (set-popup-rule! "^\\*Claude Multi-Agent Progress" :ignore t))
 
 ;; ──────────────────────────────────────────────────────────────────────────────
 ;; Keybindings
@@ -226,11 +214,14 @@ Prompts for working directory (default ~/projects), domain, and model."
 ;; ──────────────────────────────────────────────────────────────────────────────
 
 (defun claude-multi--auto-show-progress ()
-  "Create and display the progress buffer at startup."
+  "Create and display the progress buffer full-screen at startup."
   (let ((buf (get-buffer-create
               (or (bound-and-true-p claude-multi-progress-buffer-name)
                   "*Claude Multi-Agent Progress*"))))
-    (display-buffer buf)))
+    (with-current-buffer buf
+      (unless (derived-mode-p 'cma-table-mode)
+        (cma-table-mode)))
+    (switch-to-buffer buf)))
 
 (if (boundp 'doom-after-init-hook)
     (add-hook 'doom-after-init-hook #'claude-multi--auto-show-progress)
