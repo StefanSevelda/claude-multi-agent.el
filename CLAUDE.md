@@ -2,14 +2,14 @@
 
 ## Project Overview
 
-Claude Multi-Agent is an Emacs Lisp plugin exposing one user-facing surface: a sessions table (`cma-table-mode`) over the parallel Claude Code agents that the `cma` CLI manages in tmux panes, with git worktree isolation.
+Claude Multi-Agent is an Emacs Lisp plugin exposing one user-facing surface: a sessions table (`cma-table-mode`) over the parallel Claude Code agents that the `cma` CLI manages in terminal panes (tmux panes or kitty windows, whichever backend `~/.config/cma/config.toml` selects), with git worktree isolation.
 
-All agent orchestration (spawning, killing, focusing, session management, worktree management) is handled by the **`cma` Go CLI binary**. Elisp is a thin presentation layer that calls `cma` via shell and displays results. Focusing an agent — from the table or via `SPC c m f` — selects its tmux pane and raises the hosting terminal app through `cma focus`; spawning does the same.
+All agent orchestration (spawning, killing, focusing, session management, worktree management) is handled by the **`cma` Go CLI binary**. Elisp is a thin presentation layer that calls `cma` via shell and displays results. Focusing an agent — from the table or via `SPC c m f` — selects its pane and raises the hosting terminal app through `cma focus`; spawning does the same. Elisp never knows which terminal backend is in use: cma resolves tmux or kitty from its own config, so this module needs no setting for it.
 
 ### Dependencies
 
 - **cma**: Go CLI binary for agent orchestration (required, [cma-agent-framework](https://github.com/StefanSevelda/cma-agent-framework))
-- **tmux**: cma's default terminal backend — agents live as panes in the `cma` tmux session
+- **tmux** or **kitty**: cma's terminal backend (`terminal_backend` in `~/.config/cma/config.toml`, tmux by default) — agents live as panes in the `cma` tmux session, or as kitty windows
 - **buttercup**: Testing framework (dev only)
 
 ## Architecture
@@ -19,12 +19,12 @@ All agent orchestration (spawning, killing, focusing, session management, worktr
 | Repo | Language | Role |
 |------|----------|------|
 | `claude-multi-agent.el` (this repo) | Elisp | Presentation layer: keybindings and the sessions table view |
-| `cma-agent-framework/cma` | Go | All agent orchestration: terminal (tmux), git, status, sessions, worktrees |
+| `cma-agent-framework/cma` | Go | All agent orchestration: terminal (tmux or kitty), git, status, sessions, worktrees |
 
 ### Data Flow
 
 ```
-User keybinding → config.el → cma-commands.el → cma--call/cma--call-raw (cma-core.el) → cma binary → tmux/git
+User keybinding → config.el → cma-commands.el → cma--call/cma--call-raw (cma-core.el) → cma binary → tmux or kitty / git
 ```
 
 Agents are represented as **JSON alists** from `cma list --json`, not Elisp structs.
@@ -52,7 +52,7 @@ loads changes, update `installPhase` and the checks in `flake.nix`.
 
 ### Key Design Patterns
 
-- **CLI-first**: Zero `shell-command-to-string` calls to `git` or `tmux` in Elisp — everything routes through `cma--call`/`cma--call-raw`
+- **CLI-first**: Zero `shell-command-to-string` calls to `git`, `tmux` or `kitty` in Elisp — everything routes through `cma--call`/`cma--call-raw`, which is what keeps the module backend-agnostic
 - **Alist-based agents**: Agents come from `cma list --json` as alists, accessed via `(alist-get 'field agent)`
 - **Thin wrappers**: Each interactive command in `config.el` is a one-liner delegating to `cma-commands.el`
 - **Table view**: `cma-table-mode` is the plugin's single user-facing surface — a `tabulated-list-mode` sessions table with focus/kill/rename/reassign on the rows
@@ -184,7 +184,7 @@ Examples:
 
 ### Adding New Features
 
-1. If the feature involves agent orchestration, git, or kitty: implement in the Go CLI first (`cma-agent-framework/cma`), then add a thin Elisp wrapper
+1. If the feature involves agent orchestration, git, tmux or kitty: implement in the Go CLI first (`cma-agent-framework/cma`), then add a thin Elisp wrapper
 2. If the feature is Emacs-only (UI, keybindings, ediff): implement in the appropriate `autoload/` file
 3. Add tests that mock `cma--call`/`cma--call-raw`
 4. Add keybindings in `config.el` if user-facing
