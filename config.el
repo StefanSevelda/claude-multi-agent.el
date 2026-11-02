@@ -55,6 +55,7 @@ This can be customized to use different binary names (e.g., \\='claude26\\=')."
 ;; Forward declarations for cma modules
 (declare-function cma/spawn-agent "cma-commands")
 (declare-function cma/spawn-agent-with-worktree "cma-commands")
+(declare-function cma/spawn-agent-redshift "cma-commands")
 (declare-function cma/kill-agent "cma-commands")
 (declare-function cma/kill-all-agents "cma-commands")
 (declare-function cma/focus-agent "cma-commands")
@@ -103,6 +104,13 @@ This can be customized to use different binary names (e.g., \\='claude26\\=')."
 Prompts for task, working directory (default ~/projects), domain, and model."
   (interactive)
   (cma/spawn-agent))
+
+;;;###autoload
+(defun claude-multi/spawn-agent-redshift ()
+  "Spawn a Claude agent with the redshift on-demand MCP server attached.
+Prompts for task, working directory, domain, and model."
+  (interactive)
+  (cma/spawn-agent-redshift))
 
 ;;;###autoload
 (defun claude-multi/spawn-agent-with-worktree ()
@@ -192,6 +200,7 @@ Prompts for working directory (default ~/projects), domain, and model."
       (:prefix-map ("c" . "code")
        (:prefix ("m" . "claude-multi")
         :desc "Spawn agent"             "a" #'claude-multi/spawn-agent
+        :desc "Spawn agent + Redshift"  "r" #'claude-multi/spawn-agent-redshift
         :desc "Spawn with worktree"     "w" #'claude-multi/spawn-agent-with-worktree
         :desc "Open progress"           "p" #'claude-multi/open-progress
         :desc "Focus agent"             "f" #'claude-multi/focus-agent

@@ -73,6 +73,30 @@
       (let ((call-args (spy-calls-args-for 'cma--call 0)))
         (expect (member "--name" call-args) :not :to-be-truthy))))
 
+  (describe "cma/spawn-agent-redshift"
+
+    (it "passes --mcp redshift to cma CLI"
+      (spy-on 'cma--existing-domains :and-return-value nil)
+      (spy-on 'read-string :and-return-value "a task")
+      (spy-on 'read-directory-name :and-return-value "/tmp/")
+      (spy-on 'completing-read :and-return-value "opus")
+      (spy-on 'cma--call :and-return-value
+              '((agent . ((id . "agent-3") (pane_id . "7")))))
+      (cma/spawn-agent-redshift)
+      (let ((call-args (spy-calls-args-for 'cma--call 0)))
+        (expect (nth (1+ (cl-position "--mcp" call-args :test #'string=)) call-args)
+                :to-equal "redshift")))
+
+    (it "plain cma/spawn-agent does not pass --mcp"
+      (spy-on 'cma--existing-domains :and-return-value nil)
+      (spy-on 'read-string :and-return-value "a task")
+      (spy-on 'read-directory-name :and-return-value "/tmp/")
+      (spy-on 'completing-read :and-return-value "opus")
+      (spy-on 'cma--call :and-return-value
+              '((agent . ((id . "agent-4") (pane_id . "8")))))
+      (cma/spawn-agent)
+      (expect (member "--mcp" (spy-calls-args-for 'cma--call 0)) :not :to-be-truthy)))
+
   (describe "cma/spawn-agent-with-worktree"
 
     (it "passes --model flag alongside --branch"
