@@ -7,6 +7,7 @@
 
 ;;; Code:
 
+(require 'cl-lib)
 (require 'cma-core)
 
 (declare-function cma-table/refresh "cma-table")
@@ -31,9 +32,11 @@
   "Where to create worktrees.  Overridden by config.el defcustom.")
 
 ;;;###autoload
-(defun cma/spawn-agent ()
+(defun cma/spawn-agent (&optional mcp-servers)
   "Spawn a new Claude agent via cma CLI.
-Prompts for task, working directory (default ~/projects), optional domain, and model."
+Prompts for task, working directory (default ~/projects), optional domain, and model.
+MCP-SERVERS is an optional list of on-demand MCP server names, each passed
+to cma as --mcp (resolved there to ~/.claude/mcp/<name>.json)."
   (interactive)
   (let* ((task   (string-trim (read-string "Task description: ")))
          (dir    (read-directory-name "Working directory: "
@@ -47,6 +50,7 @@ Prompts for task, working directory (default ~/projects), optional domain, and m
                      (append args (list "--model" model))
                    args))
          (args   (if (not (string-empty-p domain)) (append args (list "--domain" domain)) args))
+         (args   (append args (cl-mapcan (lambda (s) (list "--mcp" s)) mcp-servers)))
          (result (apply #'cma--call args)))
     (if result
         (let* ((agent   (alist-get 'agent result))
@@ -56,6 +60,14 @@ Prompts for task, working directory (default ~/projects), optional domain, and m
           (when (fboundp 'cma-table/refresh)
             (cma-table/refresh)))
       (message "Spawn failed: %s" (or cma--last-error "unknown error")))))
+
+;;;###autoload
+(defun cma/spawn-agent-redshift ()
+  "Spawn a Claude agent with the redshift on-demand MCP server attached.
+Same prompts as `cma/spawn-agent'.  Requires the server to be provisioned
+(work machine, ~/.claude/mcp/redshift.json); cma refuses the spawn otherwise."
+  (interactive)
+  (cma/spawn-agent '("redshift")))
 
 ;;;###autoload
 (defun cma/spawn-agent-with-worktree ()
